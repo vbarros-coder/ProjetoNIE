@@ -56,7 +56,7 @@ const SECTORS_CONFIG = {
 
   // --- Logins de Grupo (Opcional, caso queira ver a área toda) ---
   'property': { 
-    allowedTabs: ['PROPERTY (SLA)', 'PROPERTY (Focais)', 'Riscos Diversos'],
+    allowedTabs: ['PROPERTY', 'Riscos Diversos'],
     passHash: '0e1efb99794ba6352960aad911a3d98ec664a4fbd677d18227921262ea7a613e' // Grupo2003
   },
   'garantia-geral': { allowedTabs: ['Garantia Judicial', 'Garantia - Ressarcimento', 'Garantia - Adicional Trabalhista', 'Garantia - Executante', 'Garantia - ECTO'] },
@@ -74,6 +74,7 @@ function getAbasPermitidas() {
     const allowed = SECTORS_CONFIG[userSector].allowedTabs;
     const allowedLower = allowed.map(k => k.toLowerCase().trim());
     
+    // Verifica se é um login de "Grupo" (geral) ou individual
     const isGeral = userSector.endsWith('-geral') || userSector === 'property';
 
     return abas.filter(aba => {
@@ -84,10 +85,12 @@ function getAbasPermitidas() {
             return allowedLower.includes(a);
         }
 
-        // Match flexível para logins -geral
+        // Match flexível para logins -geral (ex: 'property' deve ver tudo que contém 'property')
         return allowedLower.some(k => {
             if (a === k) return true;
             if (a.includes(k)) return true;
+            // Se o que está permitido for 'property', deve pegar 'property (sla)', 'property (focais)', etc.
+            if (k === 'property' && a.includes('property')) return true;
             return false;
         });
     });
@@ -223,42 +226,51 @@ async function carregarDados() {
           });
 
          const cleanRows = (content.data || []).map(row => {
-              const newRow = {};
-              // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
-              for (const key in row) {
-                  const kUpper = String(key).toUpperCase().trim();
-                  // Ignorar chaves que são apenas SIM/NÃO/S/N (erro de cabeçalho)
-                  if (kUpper === 'SIM' || kUpper === 'NÃO' || kUpper === 'NAO' || kUpper === 'S' || kUpper === 'N') continue;
+               const newRow = {};
+               // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
+               for (const key in row) {
+                   const kUpper = String(key).toUpperCase().trim();
+                   
+                   // NÃO IGNORAR MAIS CHAVES QUE SÃO SIM/NÃO (Pois podem ser colunas reais)
+                   // Apenas ignorar se for explicitamente __EMPTY
+                   if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
+                       let finalKey = key;
+                       if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
+                           finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
+                       }
 
-                  if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
-                      let finalKey = key;
-                      if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
-                          finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
-                      }
+                       let val = row[key];
+                       if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
+                           val = val.replace(/Trabalhist/gi, 'Trabalhista');
+                       }
+                       newRow[finalKey] = val;
+                   }
+               }
+               return newRow;
+           }).filter(row => {
+               const keys = Object.keys(row);
+               if (!keys.length) return false;
+               
+               // Pegar o valor da primeira coluna (geralmente a seguradora)
+               const firstVal = String(row[keys[0]] || '').trim();
+               const firstValUpper = firstVal.toUpperCase();
 
-                      let val = row[key];
-                      if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
-                          val = val.replace(/Trabalhist/gi, 'Trabalhista');
-                      }
-                      newRow[finalKey] = val;
-                  }
-              }
-              return newRow;
-          }).filter(row => {
-              // Filtragem extra: se a primeira coluna for SIM/NÃO, a linha está errada
-              const keys = Object.keys(row);
-              if (!keys.length) return false;
-              
-              const firstVal = String(row[keys[0]] || '').toUpperCase().trim();
-              if (firstVal === 'SIM' || firstVal === 'NÃO' || firstVal === 'NAO' || firstVal === 'S' || firstVal === 'N') return false;
-              
-              // Se a linha for quase toda SIM/NÃO, descarta
-              const allValues = Object.values(row).map(v => String(v).toUpperCase().trim());
-              const statusCount = allValues.filter(v => v === 'SIM' || v === 'NÃO' || v === 'NAO' || v === 'S' || v === 'N').length;
-              if (statusCount > 3 && statusCount > (allValues.length / 2)) return false;
+               // SÓ DESCARTA SE A PRIMEIRA COLUNA FOR VAZIA OU FOR UM TÍTULO DE SEÇÃO ÓBVIO
+               if (!firstVal || firstVal === '-' || firstVal === '.') return false;
+               
+               const blacklistedTitles = [
+                   'INFORMAÇÕES DA SEGURADORA', 
+                   'DADOS DA SEGURADORA', 
+                   'DADOS DA CIA', 
+                   'SLA',
+                   'PROPERTY', 
+                   'CONTATOS'
+               ];
+               if (blacklistedTitles.some(t => firstValUpper === t)) return false;
 
-              return true;
-          });
+               // Se a linha tiver pelo menos algum conteúdo, mantém
+               return true;
+           });
           allData[finalAba] = { headers: cleanHeaders, data: cleanRows };
       }
 
