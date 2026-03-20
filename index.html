@@ -83,19 +83,13 @@
     </div>
   </header>
 
-  <!-- BARRA DE PESQUISA + FILTRO -->
+  <!-- BARRA DE PESQUISA -->
   <div class="bg-white border-b border-gray-100 shadow-xs">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row gap-3 items-center">
-      <div class="relative flex-1 w-full">
+    <div class="max-w-7xl mx-auto px-4 py-3">
+      <div class="relative w-full max-w-2xl mx-auto">
         <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
         <input id="input-busca" type="text" placeholder="Buscar seguradora ou procedimento…"
-          class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50" />
-      </div>
-      <div class="flex gap-2 flex-wrap justify-center sm:justify-start">
-        <select id="select-aba"
-          class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50">
-          <option value="">Unidade</option>
-        </select>
+          class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50 transition-all" />
       </div>
     </div>
   </div>
@@ -112,7 +106,7 @@
       <p>Carregando dados…</p>
     </div>
 
-    <!-- Tabela -->
+    <!-- Tabela (LAYOUT ANTIGO - OCULTO) -->
     <div id="table-container" class="hidden">
       <div id="results-count" class="text-xs text-gray-500 mb-3"></div>
       <div class="overflow-x-auto rounded-xl shadow-sm border border-gray-100">
@@ -120,6 +114,14 @@
           <thead id="table-head" class="bg-orange-500 text-white text-xs uppercase tracking-wide"></thead>
           <tbody id="table-body" class="divide-y divide-gray-100"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Layout de Cartões (NOVO) -->
+    <div id="cards-view" class="hidden">
+      <div id="results-info" class="text-xs text-gray-400 mb-6 font-medium"></div>
+      <div id="sections-container" class="space-y-12">
+        <!-- As seções e cartões serão injetados aqui via JS -->
       </div>
     </div>
 

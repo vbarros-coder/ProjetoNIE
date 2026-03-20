@@ -183,11 +183,6 @@ document.addEventListener('DOMContentLoaded', () => {
     termoBusca = e.target.value.trim();
     renderTabela();
   });
-  document.getElementById('select-aba').addEventListener('change', e => {
-    abaAtiva = e.target.value;
-    sincronizarTabs();
-    renderTabela();
-  });
 });
 
 // ── Carregar dados ────────────────────────────────────────────────
@@ -299,25 +294,15 @@ function inicializarInterface() {
     return;
   }
 
-  // Limpar select e abas antes de preencher
-  const sel = document.getElementById('select-aba');
-  sel.innerHTML = '<option value="">Unidade</option>';
+  // Limpar abas antes de preencher
   const container = document.getElementById('tabs-container');
   container.innerHTML = '';
 
-  // Preencher select
-  abas.forEach(aba => {
-    const opt = document.createElement('option');
-    opt.value = aba;
-    opt.textContent = aba;
-    sel.appendChild(opt);
-  });
-
-  // Criar tab buttons - Só mostrar "Todas as Unidades" para admin ou se tiver mais de 1 aba
+  // Criar tab buttons - Só mostrar "Todas" para admin ou se tiver mais de 1 aba
   if (isAdmin || abas.length > 1) {
     const btnTodos = document.createElement('button');
     btnTodos.className = 'tab-btn active';
-    btnTodos.textContent = 'Todas as Unidades';
+    btnTodos.textContent = 'Todas';
     btnTodos.dataset.aba = '';
     btnTodos.onclick = () => selecionarTab('');
     container.appendChild(btnTodos);
@@ -325,7 +310,6 @@ function inicializarInterface() {
   } else {
     // Se tiver apenas uma aba, ela já começa ativa
     abaAtiva = abas[0];
-    sel.value = abaAtiva;
   }
 
   abas.forEach(aba => {
@@ -343,7 +327,6 @@ function inicializarInterface() {
 // ── Selecionar aba ────────────────────────────────────────────────
 function selecionarTab(aba) {
   abaAtiva = aba;
-  document.getElementById('select-aba').value = aba;
   sincronizarTabs();
   renderTabela();
 }
@@ -354,167 +337,152 @@ function sincronizarTabs() {
   });
 }
 
-// ── Render tabela ─────────────────────────────────────────────────
+// ── Render Interface (Layout de Cartões) ───────────────────────────
 function renderTabela() {
   document.getElementById('loading').classList.add('hidden');
+  const sectionsContainer = document.getElementById('sections-container');
+  const resultsInfo = document.getElementById('results-info');
+  const noResults = document.getElementById('no-results');
+  const cardsView = document.getElementById('cards-view');
+  const tableContainer = document.getElementById('table-container'); // Manter oculto
 
-  // Juntar dados de todas as abas ou aba ativa
-  let rows = [];
-  let headers = [];
+  sectionsContainer.innerHTML = '';
+  tableContainer.classList.add('hidden');
+  
+  // Agrupar dados por aba
+  let dataByAba = {};
+  const abasPermitidas = getAbasPermitidas();
 
   if (!abaAtiva) {
-    const abasPermitidas = getAbasPermitidas();
-
-    // Todas as abas permitidas
-    abasPermitidas.forEach((aba, idx) => {
+    abasPermitidas.forEach(aba => {
       const d = allData[aba];
-      if (!d || !d.data || d.data.length === 0) return;
-      if (idx === 0 || headers.length === 0) {
-          headers = (d.headers || []).filter(h => !h.includes('__EMPTY'));
+      if (d && d.data && d.data.length > 0) {
+        dataByAba[aba] = {
+            headers: d.headers,
+            rows: d.data
+        };
       }
-      d.data.forEach(row => rows.push({ ...row, '__aba__': aba }));
     });
   } else {
-    // Se selecionou uma aba específica, verificar se o usuário tem permissão
-    const abasPermitidas = getAbasPermitidas();
-    if (!abasPermitidas.includes(abaAtiva)) {
-        document.getElementById('table-container').classList.add('hidden');
-        document.getElementById('no-results').classList.remove('hidden');
-        return;
-    }
-
-    const d = allData[abaAtiva];
-    if (d) {
-      headers = (d.headers || []).filter(h => !h.includes('__EMPTY'));
-      rows = (d.data || []).map(r => ({ ...r, '__aba__': abaAtiva }));
+    if (abasPermitidas.includes(abaAtiva)) {
+      const d = allData[abaAtiva];
+      if (d) {
+        dataByAba[abaAtiva] = {
+            headers: d.headers,
+            rows: d.data
+        };
+      }
     }
   }
 
-  // Filtrar por busca
-  if (termoBusca) {
-    const t = termoBusca.toLowerCase();
-    rows = rows.filter(row =>
-      Object.values(row).some(v => String(v || '').toLowerCase().includes(t))
-    );
+  // Aplicar filtro de busca e contar total
+  let totalCount = 0;
+  const t = termoBusca.toLowerCase();
+
+  for (const aba in dataByAba) {
+    if (t) {
+      dataByAba[aba].rows = dataByAba[aba].rows.filter(row =>
+        Object.values(row).some(v => String(v || '').toLowerCase().includes(t))
+      );
+    }
+    totalCount += dataByAba[aba].rows.length;
   }
 
-  // Atualizar contador
-  document.getElementById('results-count').textContent =
-    `${rows.length} registro${rows.length !== 1 ? 's' : ''} encontrado${rows.length !== 1 ? 's' : ''}`;
+  resultsInfo.textContent = `${totalCount} seguradora${totalCount !== 1 ? 's' : ''} encontrada${totalCount !== 1 ? 's' : ''}`;
 
-  if (!rows.length) {
-    document.getElementById('table-container').classList.add('hidden');
-    document.getElementById('no-results').classList.remove('hidden');
+  if (totalCount === 0) {
+    cardsView.classList.add('hidden');
+    noResults.classList.remove('hidden');
     return;
   }
 
-  document.getElementById('no-results').classList.add('hidden');
-  document.getElementById('table-container').classList.remove('hidden');
+  noResults.classList.add('hidden');
+  cardsView.classList.remove('hidden');
 
-  // Montar cabeçalho
-  const thead = document.getElementById('table-head');
-  thead.innerHTML = '';
-  const trHead = document.createElement('tr');
+  // Renderizar cada seção (aba)
+  for (const aba in dataByAba) {
+    const sectionData = dataByAba[aba];
+    if (sectionData.rows.length === 0) continue;
 
-  // Coluna aba (quando mostrando todas)
-  if (!abaAtiva) {
-    const th = document.createElement('th');
-    th.textContent = 'Categoria';
-    th.className = 'sticky left-0';
-    trHead.appendChild(th);
-  }
+    const section = document.createElement('div');
+    section.className = 'section-block mb-12';
 
-  // Primeiras colunas mais importantes
-  const colsPrioritarias = headers.filter(h => {
-      const hu = String(h).toUpperCase();
-      return !hu.includes('__EMPTY') && hu !== 'UNDEFINED' && hu !== 'NULL';
-  }).slice(0, 8);
-  colsPrioritarias.forEach(h => {
-    const th = document.createElement('th');
-    th.textContent = h;
-    trHead.appendChild(th);
-  });
+    // Header da Seção
+    section.innerHTML = `
+      <div class="section-header">
+        <i class="fas fa-folder-open"></i>
+        <span>${escHtml(aba)}</span>
+        <span class="section-count">(${sectionData.rows.length})</span>
+      </div>
+      <div class="cards-grid"></div>
+    `;
 
-  const thAcao = document.createElement('th');
-  thAcao.textContent = '';
-  thAcao.style.width = '40px';
-  trHead.appendChild(thAcao);
-  thead.appendChild(trHead);
+    const grid = section.querySelector('.cards-grid');
 
-  // Montar corpo
-  const tbody = document.getElementById('table-body');
-  tbody.innerHTML = '';
+    // Renderizar cartões
+    sectionData.rows.forEach(row => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.onclick = () => abrirDetalheRow({ ...row, '__aba__': aba });
 
-  rows.forEach((row, idx) => {
-      const tr = document.createElement('tr');
-      tr.className = idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50';
-
-      if (!abaAtiva) {
-        const td = document.createElement('td');
-        td.innerHTML = `<span class="badge-admin">${escHtml(row['__aba__'] || '')}</span>`;
-        tr.appendChild(td);
-      }
-
-      // Encontrar a chave real da seguradora (primeira coluna que não seja __aba__)
-      const keys = Object.keys(row);
-      const insurerKey = keys.find(k => {
+      const headers = sectionData.headers;
+      // Tentar achar o nome da seguradora
+      const insurerKey = headers.find(k => {
           const kUpper = k.toUpperCase();
           return kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA');
-      }) || keys.find(k => k !== '__aba__' && !k.includes('__EMPTY')) || keys[0];
+      }) || headers[0];
 
-      colsPrioritarias.forEach(h => {
-        const td = document.createElement('td');
-        const val = row[h] || '';
-        td.title = val;
-        
-        let formattedVal = escHtml(String(val));
+      const seguradoraNome = row[insurerKey] || 'Seguradora';
+      
+      // Selecionar alguns campos para mostrar no card (ex: os 4 primeiros após a seguradora)
+      const otherFields = headers.filter(h => h !== insurerKey).slice(0, 4);
+      
+      let cardBodyContent = '';
+      otherFields.forEach(h => {
+          let val = row[h] || '---';
+          let formattedVal = escHtml(String(val));
+          const checkVal = formattedVal.toLowerCase().trim();
+          
+          if (checkVal === 'sim' || checkVal === 's') {
+            formattedVal = `<span class="badge-sim">SIM</span>`;
+          } else if (checkVal === 'não' || checkVal === 'nao' || checkVal === 'n') {
+            formattedVal = `<span class="badge-nao">NÃO</span>`;
+          }
 
-        // Estilo especial para a primeira coluna (Seguradora)
-        if (h === insurerKey) {
-            td.style.fontWeight = '600';
-            td.style.color = 'var(--orange-dark)';
-        }
-        
-        // Aplicar Badges Sim/Não (mais robusto)
-        const checkVal = formattedVal.toLowerCase().trim();
-        if (checkVal === 'sim' || checkVal === 's') {
-          formattedVal = `<span class="badge-sim">SIM</span>`;
-        } else if (checkVal === 'não' || checkVal === 'nao' || checkVal === 'n') {
-          formattedVal = `<span class="badge-nao">NÃO</span>`;
-        }
-
-        td.innerHTML = highlightText(formattedVal, termoBusca);
-        tr.appendChild(td);
+          cardBodyContent += `
+            <div class="card-field">
+              <span class="card-field-label">${escHtml(h)}</span>
+              <span class="card-field-value">${highlightText(formattedVal, termoBusca)}</span>
+            </div>
+          `;
       });
 
-    // Botão de detalhe
-    const tdAcao = document.createElement('td');
-    tdAcao.className = 'text-center';
-    tdAcao.innerHTML = `<button onclick="abrirDetalhe(${idx}, event)" class="text-orange-400 hover:text-orange-600 text-xs px-1">
-      <i class="fas fa-eye"></i>
-    </button>`;
-    tr.appendChild(tdAcao);
+      card.innerHTML = `
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">${highlightText(escHtml(seguradoraNome), termoBusca)}</h3>
+            <div class="card-subtitle">${escHtml(aba)}</div>
+          </div>
+          <i class="fas fa-chevron-right opacity-50"></i>
+        </div>
+        <div class="card-body">
+          ${cardBodyContent}
+        </div>
+        <div class="card-footer">
+          <div class="card-more-link">
+            <i class="fas fa-plus-circle"></i>
+            Ver todos os ${headers.length} campos
+          </div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
 
-    // Click na linha abre detalhe
-    tr.onclick = (e) => {
-      if (e.target.closest('button')) return;
-      abrirDetalheRow(row);
-    };
-
-    tbody.appendChild(tr);
-  });
-
-  // Armazenar rows para acesso no detalhe
-  window._currentRows = rows;
-  window._currentHeaders = headers;
+    sectionsContainer.appendChild(section);
+  }
 }
 
 // ── Detalhe ───────────────────────────────────────────────────────
-function abrirDetalhe(idx, e) {
-  e.stopPropagation();
-  abrirDetalheRow(window._currentRows[idx]);
-}
-
 function abrirDetalheRow(row) {
   const aba = row['__aba__'] || abaAtiva;
   const d = allData[aba] || {};
@@ -889,7 +857,6 @@ async function processarPlanilha() {
 
     // Resetar interface
     document.getElementById('tabs-container').innerHTML = '';
-    document.getElementById('select-aba').innerHTML = '<option value="">Unidade</option>';
     abaAtiva = '';
     termoBusca = '';
     document.getElementById('input-busca').value = '';
