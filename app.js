@@ -722,10 +722,13 @@ async function processarPlanilha() {
         ];
         if (blacklistedTitles.some(t => valUpper.includes(t) && valUpper.length < 30)) return false;
 
-        // 4. Checagem final: se a linha só tem "Sim/Não" em todas as colunas, descarta
+        // 4. Checagem final: se a linha só tem "Sim/Não" em todas as colunas ou está vazia, descarta
         const allValues = Object.values(row).map(v => String(v).toUpperCase().trim());
-        const hasActualData = allValues.some(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v !== 'S' && v !== 'N');
+        const hasActualData = allValues.some(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v !== 'S' && v !== 'N' && v !== 'UNDEFINED' && v !== 'NULL');
         
+        // 5. Se o nome da seguradora (primeira coluna) for vazio ou apenas um traço/ponto, descarta
+        if (val.length < 2 || val === '-' || val === '.') return false;
+
         return hasActualData;
       });
 
