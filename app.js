@@ -208,65 +208,78 @@ async function carregarDados() {
              finalAba = finalAba.replace(/Trabalhist/gi, 'Trabalhista');
          }
 
-         const cleanHeaders = (content.headers || []).map(h => {
-              // Corrigir typo no header
+         // 1. Limpar Headers (Apenas __EMPTY e nulos)
+          const cleanHeaders = (content.headers || []).filter(h => {
+              const hu = String(h).toUpperCase().trim();
+              return !hu.includes('__EMPTY') && hu !== 'UNDEFINED' && hu !== 'NULL' && hu !== '';
+          }).map(h => {
               let finalH = String(h);
               if (finalH.toLowerCase().includes('trabalhist') && !finalH.toLowerCase().includes('trabalhista')) {
                   finalH = finalH.replace(/Trabalhist/gi, 'Trabalhista');
               }
               return finalH;
-          }).filter(h => {
-              const hu = String(h).toUpperCase().trim();
-              return !hu.includes('__EMPTY') && hu !== 'SIM' && hu !== 'NÃO' && hu !== 'NAO' && hu !== 'S' && hu !== 'N' && hu !== 'UNDEFINED' && hu !== 'NULL';
           });
 
-         const cleanRows = (content.data || []).map(row => {
-               const newRow = {};
-               // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
-               for (const key in row) {
-                   const kUpper = String(key).toUpperCase().trim();
-                   
-                   // NÃO IGNORAR MAIS CHAVES QUE SÃO SIM/NÃO (Pois podem ser colunas reais)
-                   // Apenas ignorar se for explicitamente __EMPTY
-                   if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
-                       let finalKey = key;
-                       if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
-                           finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
-                       }
+          // 2. Tentar identificar qual coluna é a Seguradora para esta aba
+          // Olhamos as primeiras 10 linhas para ver qual coluna tem nomes de empresas (não SIM/NÃO)
+          let insurerKey = cleanHeaders[0];
+          const sampleRows = (content.data || []).slice(0, 10);
+          for (const key of cleanHeaders) {
+              const kUpper = key.toUpperCase();
+              const isLikelyInsurerCol = kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA');
+              
+              let nonStatusCount = 0;
+              sampleRows.forEach(r => {
+                  const val = String(r[key] || '').toUpperCase().trim();
+                  if (val !== '' && val !== 'SIM' && val !== 'NÃO' && val !== 'NAO' && val !== 'S' && val !== 'N') {
+                      nonStatusCount++;
+                  }
+              });
 
-                       let val = row[key];
-                       if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
-                           val = val.replace(/Trabalhist/gi, 'Trabalhista');
-                       }
-                       newRow[finalKey] = val;
-                   }
-               }
-               return newRow;
-           }).filter(row => {
-               const keys = Object.keys(row);
-               if (!keys.length) return false;
-               
-               // Pegar o valor da primeira coluna (geralmente a seguradora)
-               const firstVal = String(row[keys[0]] || '').trim();
-               const firstValUpper = firstVal.toUpperCase();
+              if (isLikelyInsurerCol && nonStatusCount > 0) {
+                  insurerKey = key;
+                  break;
+              }
+              if (nonStatusCount > 5) { // Se mais da metade não for status, é um bom candidato
+                  insurerKey = key;
+              }
+          }
 
-               // SÓ DESCARTA SE A PRIMEIRA COLUNA FOR VAZIA OU FOR UM TÍTULO DE SEÇÃO ÓBVIO
-               if (!firstVal || firstVal === '-' || firstVal === '.') return false;
-               
-               const blacklistedTitles = [
-                   'INFORMAÇÕES DA SEGURADORA', 
-                   'DADOS DA SEGURADORA', 
-                   'DADOS DA CIA', 
-                   'SLA',
-                   'PROPERTY', 
-                   'CONTATOS'
-               ];
-               if (blacklistedTitles.some(t => firstValUpper === t)) return false;
+          // 3. Limpar Rows
+          const cleanRows = (content.data || []).map(row => {
+              const newRow = {};
+              for (const key in row) {
+                  const kUpper = String(key).toUpperCase().trim();
+                  if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
+                      let finalKey = key;
+                      if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
+                          finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
+                      }
 
-               // Se a linha tiver pelo menos algum conteúdo, mantém
-               return true;
-           });
-          allData[finalAba] = { headers: cleanHeaders, data: cleanRows };
+                      let val = row[key];
+                      if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
+                          val = val.replace(/Trabalhist/gi, 'Trabalhista');
+                      }
+                      newRow[finalKey] = val;
+                  }
+              }
+              return newRow;
+          }).filter(row => {
+              const keys = Object.keys(row);
+              if (!keys.length) return false;
+              
+              // Se a coluna identificada como seguradora for SIM/NÃO ou vazia, essa linha provavelmente é lixo
+              const val = String(row[insurerKey] || '').toUpperCase().trim();
+              if (val === '' || val === 'SIM' || val === 'NÃO' || val === 'NAO' || val === 'S' || val === 'N') return false;
+
+              // Se a linha for só um título de seção, descarta
+              const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'SLA', 'CONTATOS', 'PROPERTY', 'RCG', 'RCP', 'GARANTIA'];
+              if (blacklisted.some(t => val.includes(t) && val.length < 25)) return false;
+
+              return true;
+          });
+          
+          allData[finalAba] = { headers: cleanHeaders, data: cleanRows, insurerKey: insurerKey };
       }
 
     inicializarInterface();
@@ -359,7 +372,8 @@ function renderTabela() {
       if (d && d.data && d.data.length > 0) {
         dataByAba[aba] = {
             headers: d.headers,
-            rows: d.data
+            rows: d.data,
+            insurerKey: d.insurerKey
         };
       }
     });
@@ -369,7 +383,8 @@ function renderTabela() {
       if (d) {
         dataByAba[abaAtiva] = {
             headers: d.headers,
-            rows: d.data
+            rows: d.data,
+            insurerKey: d.insurerKey
         };
       }
     }
@@ -426,17 +441,7 @@ function renderTabela() {
       card.onclick = () => abrirDetalheRow({ ...row, '__aba__': aba });
 
       const headers = sectionData.headers;
-      // Tentar achar o nome da seguradora (Pular colunas que contenham SIM/NÃO no valor)
-      const insurerKey = headers.find(k => {
-          const kUpper = k.toUpperCase();
-          const val = String(row[k] || '').toUpperCase().trim();
-          const isStatus = val === 'SIM' || val === 'NÃO' || val === 'NAO' || val === 'S' || val === 'N';
-          return (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA')) && !isStatus;
-      }) || headers.find(k => {
-          const val = String(row[k] || '').toUpperCase().trim();
-          return val !== 'SIM' && val !== 'NÃO' && val !== 'NAO' && val !== 'S' && val !== 'N' && val !== '';
-      }) || headers[0];
-
+      const insurerKey = sectionData.insurerKey || headers[0];
       const seguradoraNome = row[insurerKey] || 'Seguradora';
       
       // Selecionar alguns campos para mostrar no card (ex: os 4 primeiros após a seguradora)
