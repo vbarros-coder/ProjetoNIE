@@ -369,10 +369,11 @@ function renderTabela() {
             td.style.color = 'var(--orange-dark)';
         }
         
-        // Aplicar Badges Sim/Não
-        if (formattedVal.toLowerCase() === 'sim') {
+        // Aplicar Badges Sim/Não (mais robusto)
+        const checkVal = formattedVal.toLowerCase().trim();
+        if (checkVal === 'sim' || checkVal === 's') {
           formattedVal = `<span class="badge-sim">SIM</span>`;
-        } else if (formattedVal.toLowerCase() === 'não' || formattedVal.toLowerCase() === 'nao') {
+        } else if (checkVal === 'não' || checkVal === 'nao' || checkVal === 'n') {
           formattedVal = `<span class="badge-nao">NÃO</span>`;
         }
 
@@ -441,9 +442,10 @@ function abrirDetalheRow(row) {
     div.className = 'detalhe-item selectable';
     
     let formattedVal = escHtml(String(val));
-    if (formattedVal.toLowerCase() === 'sim') {
+    const checkVal = formattedVal.toLowerCase().trim();
+    if (checkVal === 'sim' || checkVal === 's') {
         formattedVal = `<span class="badge-sim">SIM</span>`;
-    } else if (formattedVal.toLowerCase() === 'não' || formattedVal.toLowerCase() === 'nao') {
+    } else if (checkVal === 'não' || checkVal === 'nao' || checkVal === 'n') {
         formattedVal = `<span class="badge-nao">NÃO</span>`;
     }
 
