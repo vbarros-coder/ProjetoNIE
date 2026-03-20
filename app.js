@@ -426,10 +426,15 @@ function renderTabela() {
       card.onclick = () => abrirDetalheRow({ ...row, '__aba__': aba });
 
       const headers = sectionData.headers;
-      // Tentar achar o nome da seguradora
+      // Tentar achar o nome da seguradora (Pular colunas que contenham SIM/NÃO no valor)
       const insurerKey = headers.find(k => {
           const kUpper = k.toUpperCase();
-          return kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA');
+          const val = String(row[k] || '').toUpperCase().trim();
+          const isStatus = val === 'SIM' || val === 'NÃO' || val === 'NAO' || val === 'S' || val === 'N';
+          return (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA')) && !isStatus;
+      }) || headers.find(k => {
+          const val = String(row[k] || '').toUpperCase().trim();
+          return val !== 'SIM' && val !== 'NÃO' && val !== 'NAO' && val !== 'S' && val !== 'N' && val !== '';
       }) || headers[0];
 
       const seguradoraNome = row[insurerKey] || 'Seguradora';
