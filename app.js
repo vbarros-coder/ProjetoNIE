@@ -190,15 +190,58 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Carregar dados ────────────────────────────────────────────────
 async function carregarDados() {
   try {
+    let rawData = {};
     // Tenta carregar do localStorage (se importado pelo admin)
     const localData = localStorage.getItem('av_dados');
     if (localData) {
-      allData = JSON.parse(localData);
+      rawData = JSON.parse(localData);
     } else {
       const resp = await fetch('dados.json');
       if (!resp.ok) throw new Error('Falha ao carregar dados');
-      allData = await resp.json();
+      rawData = await resp.json();
     }
+
+    // LIMPEZA GLOBAL DE DADOS (Remover __EMPTY de todas as abas e headers)
+     allData = {};
+     for (const [aba, content] of Object.entries(rawData)) {
+         // Corrigir typo no nome da aba se existir
+         let finalAba = aba.trim();
+         if (finalAba.toLowerCase().includes('trabalhist') && !finalAba.toLowerCase().includes('trabalhista')) {
+             finalAba = finalAba.replace(/Trabalhist/gi, 'Trabalhista');
+         }
+
+         const cleanHeaders = (content.headers || []).map(h => {
+             // Corrigir typo no header
+             let finalH = String(h);
+             if (finalH.toLowerCase().includes('trabalhist') && !finalH.toLowerCase().includes('trabalhista')) {
+                 finalH = finalH.replace(/Trabalhist/gi, 'Trabalhista');
+             }
+             return finalH;
+         }).filter(h => !String(h).toUpperCase().includes('__EMPTY'));
+
+         const cleanRows = (content.data || []).map(row => {
+             const newRow = {};
+             // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
+             for (const key in row) {
+                 const kUpper = String(key).toUpperCase();
+                 if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
+                     let finalKey = key;
+                     if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
+                         finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
+                     }
+
+                     let val = row[key];
+                     if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
+                         val = val.replace(/Trabalhist/gi, 'Trabalhista');
+                     }
+                     newRow[finalKey] = val;
+                 }
+             }
+             return newRow;
+         });
+         allData[finalAba] = { headers: cleanHeaders, data: cleanRows };
+     }
+
     inicializarInterface();
   } catch (err) {
     document.getElementById('loading').innerHTML = `
@@ -350,7 +393,10 @@ function renderTabela() {
   }
 
   // Primeiras colunas mais importantes
-  const colsPrioritarias = headers.slice(0, 8);
+  const colsPrioritarias = headers.filter(h => {
+      const hu = String(h).toUpperCase();
+      return !hu.includes('__EMPTY') && hu !== 'UNDEFINED' && hu !== 'NULL';
+  }).slice(0, 8);
   colsPrioritarias.forEach(h => {
     const th = document.createElement('th');
     th.textContent = h;
@@ -439,8 +485,11 @@ function abrirDetalhe(idx, e) {
 
 function abrirDetalheRow(row) {
   const aba = row['__aba__'] || abaAtiva;
-  const h = allData[aba]?.headers || window._currentHeaders || [];
-  const seguradora = row['Seguradora'] || row[h[0]] || 'Detalhes';
+  const d = allData[aba] || {};
+  const h = d.headers || window._currentHeaders || [];
+  
+  // Garantir que a seguradora seja o primeiro campo válido
+  const seguradora = row['Seguradora'] || row['SEGURADORA'] || row[h[0]] || 'Detalhes';
 
   document.getElementById('modal-titulo').textContent = `${aba} — ${seguradora}`;
 
@@ -463,10 +512,13 @@ function abrirDetalheRow(row) {
     'honorário': 'fa-hand-holding-dollar'
   };
 
-  h.forEach(key => {
-    // Filtro para ignorar chaves __EMPTY
-    if (key.includes('__EMPTY')) return;
+  // Filtrar e renderizar apenas chaves válidas
+  const keysToRender = h.filter(key => {
+      const kUpper = String(key).toUpperCase();
+      return !kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL' && key !== '__aba__';
+  });
 
+  keysToRender.forEach(key => {
     const val = row[key];
     if (!val && val !== 0) return;
     const div = document.createElement('div');
@@ -782,8 +834,11 @@ async function processarPlanilha() {
       if (!jsonRows.length) return;
       
       // Pegar os headers reais da primeira linha válida de dados (ou do objeto json)
-      // Filtrar __EMPTY logo na origem
-      const headers = Object.keys(jsonRows[0]).filter(h => !h.includes('__EMPTY'));
+      // Filtrar __EMPTY logo na origem (case-insensitive)
+      const headers = Object.keys(jsonRows[0]).filter(h => {
+          const hu = String(h).toUpperCase();
+          return !hu.includes('__EMPTY') && hu !== 'UNDEFINED' && hu !== 'NULL';
+      });
       
       // CORREÇÃO DO NOME DA ABA (Sheet Name)
       let finalSheetName = sheetName.trim();
