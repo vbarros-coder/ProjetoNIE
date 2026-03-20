@@ -211,36 +211,56 @@ async function carregarDados() {
          }
 
          const cleanHeaders = (content.headers || []).map(h => {
-             // Corrigir typo no header
-             let finalH = String(h);
-             if (finalH.toLowerCase().includes('trabalhist') && !finalH.toLowerCase().includes('trabalhista')) {
-                 finalH = finalH.replace(/Trabalhist/gi, 'Trabalhista');
-             }
-             return finalH;
-         }).filter(h => !String(h).toUpperCase().includes('__EMPTY'));
+              // Corrigir typo no header
+              let finalH = String(h);
+              if (finalH.toLowerCase().includes('trabalhist') && !finalH.toLowerCase().includes('trabalhista')) {
+                  finalH = finalH.replace(/Trabalhist/gi, 'Trabalhista');
+              }
+              return finalH;
+          }).filter(h => {
+              const hu = String(h).toUpperCase().trim();
+              return !hu.includes('__EMPTY') && hu !== 'SIM' && hu !== 'NÃO' && hu !== 'NAO' && hu !== 'S' && hu !== 'N' && hu !== 'UNDEFINED' && hu !== 'NULL';
+          });
 
          const cleanRows = (content.data || []).map(row => {
-             const newRow = {};
-             // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
-             for (const key in row) {
-                 const kUpper = String(key).toUpperCase();
-                 if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
-                     let finalKey = key;
-                     if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
-                         finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
-                     }
+              const newRow = {};
+              // Copiar apenas chaves que não sejam __EMPTY e corrigir typos
+              for (const key in row) {
+                  const kUpper = String(key).toUpperCase().trim();
+                  // Ignorar chaves que são apenas SIM/NÃO/S/N (erro de cabeçalho)
+                  if (kUpper === 'SIM' || kUpper === 'NÃO' || kUpper === 'NAO' || kUpper === 'S' || kUpper === 'N') continue;
 
-                     let val = row[key];
-                     if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
-                         val = val.replace(/Trabalhist/gi, 'Trabalhista');
-                     }
-                     newRow[finalKey] = val;
-                 }
-             }
-             return newRow;
-         });
-         allData[finalAba] = { headers: cleanHeaders, data: cleanRows };
-     }
+                  if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
+                      let finalKey = key;
+                      if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
+                          finalKey = key.replace(/Trabalhist/gi, 'Trabalhista');
+                      }
+
+                      let val = row[key];
+                      if (typeof val === 'string' && val.toLowerCase().includes('trabalhist') && !val.toLowerCase().includes('trabalhista')) {
+                          val = val.replace(/Trabalhist/gi, 'Trabalhista');
+                      }
+                      newRow[finalKey] = val;
+                  }
+              }
+              return newRow;
+          }).filter(row => {
+              // Filtragem extra: se a primeira coluna for SIM/NÃO, a linha está errada
+              const keys = Object.keys(row);
+              if (!keys.length) return false;
+              
+              const firstVal = String(row[keys[0]] || '').toUpperCase().trim();
+              if (firstVal === 'SIM' || firstVal === 'NÃO' || firstVal === 'NAO' || firstVal === 'S' || firstVal === 'N') return false;
+              
+              // Se a linha for quase toda SIM/NÃO, descarta
+              const allValues = Object.values(row).map(v => String(v).toUpperCase().trim());
+              const statusCount = allValues.filter(v => v === 'SIM' || v === 'NÃO' || v === 'NAO' || v === 'S' || v === 'N').length;
+              if (statusCount > 3 && statusCount > (allValues.length / 2)) return false;
+
+              return true;
+          });
+          allData[finalAba] = { headers: cleanHeaders, data: cleanRows };
+      }
 
     inicializarInterface();
   } catch (err) {
