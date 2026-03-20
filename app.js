@@ -114,31 +114,48 @@ document.addEventListener('DOMContentLoaded', () => {
   // Travas de segurança via JS
   document.addEventListener('contextmenu', e => e.preventDefault()); // Desabilita botão direito
   
-  // Bloqueio de Copiar e Colar
+  // Bloqueio de Copiar e Colar (Exceto na área de login)
   document.addEventListener('copy', e => {
+    if (e.target.closest('#login-overlay, #modal-login')) return;
     e.preventDefault();
     alert('A cópia de dados é restrita por segurança.');
   });
-  document.addEventListener('paste', e => e.preventDefault());
+  document.addEventListener('paste', e => {
+    if (e.target.closest('#login-overlay, #modal-login')) return;
+    e.preventDefault();
+  });
   document.addEventListener('selectstart', e => {
-    if (!e.target.closest('.selectable')) {
-        e.preventDefault();
+    if (e.target.closest('#login-overlay, #modal-login') || e.target.closest('.selectable')) {
+        return;
     }
+    e.preventDefault();
   });
 
   document.addEventListener('keydown', e => {
-    // Desabilita F12, Ctrl+Shift+I, Ctrl+U (Ver código fonte), Ctrl+C, Ctrl+V
+    // Desabilita F12, Ctrl+Shift+I, Ctrl+U (Ver código fonte)
+    // Ctrl+C, Ctrl+V são permitidos APENAS na área de login
+    const isLoginArea = e.target.closest('#login-overlay, #modal-login');
+    
     const forbiddenKeys = [123]; // F12
-    const isForbiddenCombo = (
+    const isDevToolsCombo = (
       (e.ctrlKey && e.shiftKey && e.keyCode === 73) || // Ctrl+Shift+I
-      (e.ctrlKey && e.keyCode === 85) || // Ctrl+U
+      (e.ctrlKey && e.keyCode === 85)    // Ctrl+U
+    );
+
+    const isCopyPasteCombo = (
       (e.ctrlKey && e.keyCode === 67) || // Ctrl+C
       (e.ctrlKey && e.keyCode === 86)    // Ctrl+V
     );
 
-    if (forbiddenKeys.includes(e.keyCode) || isForbiddenCombo) {
+    if (forbiddenKeys.includes(e.keyCode) || isDevToolsCombo) {
       e.preventDefault();
       alert('Esta ação foi desabilitada por motivos de segurança.');
+      return;
+    }
+
+    if (isCopyPasteCombo && !isLoginArea) {
+      e.preventDefault();
+      alert('A cópia de dados é restrita por segurança.');
     }
   });
 
@@ -221,24 +238,30 @@ function inicializarInterface() {
     sel.appendChild(opt);
   });
 
-  // Criar tab buttons
-  const btnTodos = document.createElement('button');
-  btnTodos.className = 'tab-btn active';
-  btnTodos.textContent = 'Todas as Unidades';
-  btnTodos.dataset.aba = '';
-  btnTodos.onclick = () => selecionarTab('');
-  container.appendChild(btnTodos);
+  // Criar tab buttons - Só mostrar "Todas as Unidades" para admin ou se tiver mais de 1 aba
+  if (isAdmin || abas.length > 1) {
+    const btnTodos = document.createElement('button');
+    btnTodos.className = 'tab-btn active';
+    btnTodos.textContent = 'Todas as Unidades';
+    btnTodos.dataset.aba = '';
+    btnTodos.onclick = () => selecionarTab('');
+    container.appendChild(btnTodos);
+    abaAtiva = '';
+  } else {
+    // Se tiver apenas uma aba, ela já começa ativa
+    abaAtiva = abas[0];
+    sel.value = abaAtiva;
+  }
 
   abas.forEach(aba => {
     const btn = document.createElement('button');
-    btn.className = 'tab-btn';
+    btn.className = 'tab-btn' + (aba === abaAtiva ? ' active' : '');
     btn.textContent = aba;
     btn.dataset.aba = aba;
     btn.onclick = () => selecionarTab(aba);
     container.appendChild(btn);
   });
 
-  abaAtiva = '';
   renderTabela();
 }
 
@@ -354,7 +377,10 @@ function renderTabela() {
 
       // Encontrar a chave real da seguradora (primeira coluna que não seja __aba__)
       const keys = Object.keys(row);
-      const insurerKey = keys.find(k => k !== '__aba__' && !k.includes('__EMPTY')) || keys[0];
+      const insurerKey = keys.find(k => {
+          const kUpper = k.toUpperCase();
+          return kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('SISTEMA') || kUpper.includes('COMPANHIA');
+      }) || keys.find(k => k !== '__aba__' && !k.includes('__EMPTY')) || keys[0];
 
       colsPrioritarias.forEach(h => {
         const td = document.createElement('td');
@@ -644,9 +670,17 @@ async function processarPlanilha() {
       // Encontrar a linha que contém "Seguradora" ou "Cia" ou "Sistema"
       // Geralmente é o cabeçalho real.
       let headerIdx = 0;
-      for (let i = 0; i < Math.min(rawRows.length, 8); i++) {
-        const rowValues = rawRows[i].map(v => String(v).toUpperCase());
-        if (rowValues.some(v => v.includes('SEGURADORA') || v.includes('SISTEMA') || v.includes('CIA') || v.includes('COMPANHIA'))) {
+      for (let i = 0; i < Math.min(rawRows.length, 12); i++) {
+        const rowValues = rawRows[i].map(v => String(v || '').toUpperCase().trim());
+        // Critérios para ser cabeçalho:
+        // 1. Conter palavras-chave
+        const hasKeywords = rowValues.some(v => v.includes('SEGURADORA') || v.includes('SISTEMA') || v.includes('CIA') || v.includes('COMPANHIA'));
+        // 2. Não ser uma linha de dados (Sim/Não)
+        const isStatusRow = rowValues.filter(v => v === 'SIM' || v === 'NÃO' || v === 'NAO' || v === 'S' || v === 'N').length > 2;
+        // 3. Ter um número razoável de colunas preenchidas
+        const filledCols = rowValues.filter(v => v.length > 0).length;
+
+        if (hasKeywords && !isStatusRow && filledCols > 2) {
           headerIdx = i;
           break;
         }
@@ -697,8 +731,12 @@ async function processarPlanilha() {
         const keys = Object.keys(row);
         if (!keys.length) return false;
 
-        // Tentar achar qual coluna tem o nome da seguradora (primeira coluna preenchida)
-        const firstColKey = keys.find(k => row[k] !== '') || keys[0];
+        // Tentar achar qual coluna tem o nome da seguradora (primeira coluna preenchida que não seja status)
+        const firstColKey = keys.find(k => {
+            const v = String(row[k] || '').toUpperCase().trim();
+            return v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v !== 'S' && v !== 'N';
+        }) || keys[0];
+
         const val = String(row[firstColKey] || '').trim();
         const valUpper = val.toUpperCase();
 
@@ -707,7 +745,7 @@ async function processarPlanilha() {
             return false;
         }
 
-        // 2. Se a primeira coluna for vazia, removemos
+        // 2. Se a primeira coluna real for vazia, removemos
         if (!val) return false;
 
         // 3. Remover títulos de seção comuns
@@ -716,16 +754,20 @@ async function processarPlanilha() {
             'DADOS DA SEGURADORA', 
             'DADOS DA CIA', 
             'SLA',
-            'PROPERTY',
+            'PROPERTY', 
             'CONTATOS',
-            'SIM', 'NÃO', 'NAO'
+            'SIM', 'NÃO', 'NAO', 'OK'
         ];
         if (blacklistedTitles.some(t => valUpper.includes(t) && valUpper.length < 30)) return false;
 
         // 4. Checagem final: se a linha só tem "Sim/Não" em todas as colunas ou está vazia, descarta
         const allValues = Object.values(row).map(v => String(v).toUpperCase().trim());
+        const statusCount = allValues.filter(v => v === 'SIM' || v === 'NÃO' || v === 'NAO' || v === 'S' || v === 'N').length;
         const hasActualData = allValues.some(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v !== 'S' && v !== 'N' && v !== 'UNDEFINED' && v !== 'NULL');
         
+        // Se a maioria das colunas forem status, pode ser uma linha de cabeçalho errada ou lixo
+        if (statusCount > 5 && !hasActualData) return false;
+
         // 5. Se o nome da seguradora (primeira coluna) for vazio ou apenas um traço/ponto, descarta
         if (val.length < 2 || val === '-' || val === '.') return false;
 
