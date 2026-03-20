@@ -642,9 +642,9 @@ async function processarPlanilha() {
       // Encontrar a linha que contém "Seguradora" ou "Cia" ou "Sistema"
       // Geralmente é o cabeçalho real.
       let headerIdx = 0;
-      for (let i = 0; i < Math.min(rawRows.length, 5); i++) {
-        const row = rawRows[i].map(v => String(v).toUpperCase());
-        if (row.some(v => v.includes('SEGURADORA') || v.includes('SISTEMA') || v.includes('CIA'))) {
+      for (let i = 0; i < Math.min(rawRows.length, 8); i++) {
+        const rowValues = rawRows[i].map(v => String(v).toUpperCase());
+        if (rowValues.some(v => v.includes('SEGURADORA') || v.includes('SISTEMA') || v.includes('CIA') || v.includes('COMPANHIA'))) {
           headerIdx = i;
           break;
         }
@@ -654,7 +654,8 @@ async function processarPlanilha() {
       let jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '', range: headerIdx });
       
       // CORREÇÃO DE CABEÇALHOS: Se houver "Trabalhist" no nome das colunas
-      const oldHeaders = Object.keys(jsonRows[0] || {});
+      const sampleRow = jsonRows[0] || {};
+      const oldHeaders = Object.keys(sampleRow);
       const headMap = {};
       let hasHeaderFix = false;
       oldHeaders.forEach(h => {
@@ -690,19 +691,36 @@ async function processarPlanilha() {
         return row;
       }).filter(row => {
         if (!row) return false;
-        const firstColKey = Object.keys(row)[0];
+        const keys = Object.keys(row);
+        const firstColKey = keys[0];
         const val = String(row[firstColKey] || '').trim();
         const valUpper = val.toUpperCase();
 
-        // 1. Se a primeira coluna estiver vazia, removemos
-        if (!val) return false;
+        // 1. Se a primeira coluna estiver vazia ou for __EMPTY, removemos
+        if (!val || firstColKey.includes('__EMPTY')) return false;
 
-        // 2. Se o valor for "Sim/Não", removemos
-        if (valUpper === 'SIM' || valUpper === 'NÃO' || valUpper === 'NAO') return false;
+        // 2. Se o valor for "Sim/Não" ou variações, removemos (pois não é nome de seguradora)
+        const isSimNao = (
+            valUpper === 'SIM' || valUpper === 'NÃO' || valUpper === 'NAO' || 
+            valUpper === 'S' || valUpper === 'N' || valUpper === 'OK'
+        );
+        if (isSimNao) return false;
 
-        // 3. Remover títulos de seção
-        const blacklistedTitles = ['INFORMAÇÕES DA SEGURADORA', 'DADOS DA SEGURADORA', 'DADOS DA CIA', 'SLA'];
+        // 3. Remover títulos de seção comuns em planilhas Addvalora
+        const blacklistedTitles = [
+            'INFORMAÇÕES DA SEGURADORA', 
+            'DADOS DA SEGURADORA', 
+            'DADOS DA CIA', 
+            'SLA',
+            'PROPERTY',
+            'CONTATOS'
+        ];
         if (blacklistedTitles.some(t => valUpper.includes(t))) return false;
+
+        // 4. Se a linha inteira só tiver "Sim/Não", descarta
+        const allVals = Object.values(row).map(v => String(v).toUpperCase());
+        const onlyStatus = allVals.every(v => v === 'SIM' || v === 'NÃO' || v === 'NAO' || v === '');
+        if (onlyStatus) return false;
 
         return true;
       });
