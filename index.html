@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grupo Addvalora – Procedimentos por Seguradora</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="static/style.css" rel="stylesheet" />
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+  <!-- OVERLAY DE LOGIN INICIAL -->
+  <div id="login-overlay" class="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900">
+    <div class="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4 text-center">
+      <img src="logo-icon.png" alt="Addvalora" class="h-16 mx-auto mb-6" />
+      <h2 class="text-xl font-bold text-gray-800 mb-2">Acesso Restrito</h2>
+      <p class="text-sm text-gray-500 mb-6">Entre com seu usuário de setor para acessar os procedimentos.</p>
+      
+      <div class="space-y-4 text-left">
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Usuário</label>
+          <input id="user-login-name" type="text" placeholder="setor"
+            class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Senha</label>
+          <input id="user-login-pass" type="password" placeholder="••••••••"
+            class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50"
+            onkeydown="if(event.key==='Enter') doUserLogin()" />
+        </div>
+        <div id="user-login-error" class="hidden text-xs text-red-500 text-center font-medium">Usuário ou senha incorretos.</div>
+      </div>
+      
+      <button onclick="doUserLogin()"
+        class="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-3 mt-6 text-sm font-bold transition-all shadow-lg shadow-orange-200">
+        ACESSAR SISTEMA
+      </button>
+      
+      <p class="text-[10px] text-gray-400 mt-6 uppercase tracking-widest font-semibold">Grupo Addvalora © 2026</p>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header class="bg-white shadow-sm border-b border-orange-100 sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <!-- Logo Addvalora (ícone) -->
+        <img src="logo-icon.png" alt="Addvalora" class="h-10 w-auto" />
+        <div>
+          <h1 class="text-lg font-bold text-orange-500 leading-tight">Procedimentos por Seguradora</h1>
+          <p class="text-xs text-gray-500">Grupo Addvalora 2026</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <!-- Botão importar planilha — visível SOMENTE para admin -->
+        <button id="btn-importar" onclick="document.getElementById('modal-importar').classList.remove('hidden')"
+          class="hidden items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition">
+          <i class="fas fa-file-excel"></i>
+          <span>Importar Planilha</span>
+        </button>
+        <!-- Botão Admin Login -->
+        <button id="btn-admin-login" onclick="document.getElementById('modal-login').classList.remove('hidden')"
+          class="flex items-center gap-1 text-gray-400 hover:text-orange-500 text-xs transition" title="Área administrativa">
+          <i class="fas fa-lock text-base"></i>
+        </button>
+        <!-- Botão Logout admin (oculto por padrão) -->
+        <button id="btn-admin-logout" onclick="adminLogout()"
+          class="hidden items-center gap-1 text-xs text-orange-500 hover:text-orange-700 transition">
+          <i class="fas fa-user-shield"></i>
+          <span>Admin</span>
+          <i class="fas fa-sign-out-alt ml-1"></i>
+        </button>
+        <!-- Botão Logout Usuário -->
+        <button id="btn-user-logout" onclick="userLogout()"
+          class="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition" title="Sair">
+          <i class="fas fa-power-off"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- BARRA DE PESQUISA + FILTRO -->
+  <div class="bg-white border-b border-gray-100 shadow-xs">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row gap-3 items-center">
+      <div class="relative flex-1 w-full">
+        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+        <input id="input-busca" type="text" placeholder="Buscar seguradora ou procedimento…"
+          class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50" />
+      </div>
+      <div class="flex gap-2 flex-wrap justify-center sm:justify-start">
+        <select id="select-aba"
+          class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-gray-50">
+          <option value="">Unidade</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTEÚDO PRINCIPAL -->
+  <main class="flex-1 max-w-7xl mx-auto w-full px-4 py-6">
+
+    <!-- Abas de categorias -->
+    <div id="tabs-container" class="flex gap-2 flex-wrap mb-5"></div>
+
+    <!-- Loading -->
+    <div id="loading" class="flex flex-col items-center justify-center py-24 text-gray-400">
+      <i class="fas fa-spinner fa-spin text-4xl text-orange-400 mb-3"></i>
+      <p>Carregando dados…</p>
+    </div>
+
+    <!-- Tabela -->
+    <div id="table-container" class="hidden">
+      <div id="results-count" class="text-xs text-gray-500 mb-3"></div>
+      <div class="overflow-x-auto rounded-xl shadow-sm border border-gray-100">
+        <table id="main-table" class="w-full text-sm bg-white">
+          <thead id="table-head" class="bg-orange-500 text-white text-xs uppercase tracking-wide"></thead>
+          <tbody id="table-body" class="divide-y divide-gray-100"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sem resultados -->
+    <div id="no-results" class="hidden flex flex-col items-center justify-center py-24 text-gray-400">
+      <i class="fas fa-search text-4xl mb-3"></i>
+      <p>Nenhum resultado encontrado.</p>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-white border-t border-orange-100 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-4">
+        <img src="logo-grupo.png" alt="Grupo Addvalora" class="h-10 object-contain" />
+        <div class="h-8 w-[1px] bg-gray-200 hidden sm:block"></div>
+        <div class="flex flex-col">
+          <p class="text-[10px] text-gray-400 uppercase tracking-widest font-bold">Desenvolvido por</p>
+          <div class="flex items-center gap-2">
+            <img src="nie-logo.png" alt="NIE" class="h-8 object-contain" />
+            <span class="text-sm font-bold text-slate-700 tracking-tighter">Núcleo de Inteligência e Estratégia</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="text-center sm:text-right">
+        <p class="text-xs text-gray-400">
+          © 2026 Grupo Addvalora. Todos os direitos reservados.
+        </p>
+        <p class="text-[9px] text-orange-400 font-semibold uppercase tracking-tighter mt-1">Inovação & Tecnologia NIE</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- MODAL LOGIN ADMIN -->
+  <div id="modal-login" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm mx-4">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="bg-orange-100 rounded-full p-2">
+          <i class="fas fa-user-shield text-orange-500 text-xl"></i>
+        </div>
+        <h2 class="text-lg font-bold text-gray-700">Acesso Administrativo</h2>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Usuário</label>
+          <input id="login-user" type="text" placeholder="admin"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 mb-1 block">Senha</label>
+          <input id="login-pass" type="password" placeholder="••••••••"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+            onkeydown="if(event.key==='Enter') doLogin()" />
+        </div>
+        <div id="login-error" class="hidden text-xs text-red-500 text-center">Usuário ou senha incorretos.</div>
+      </div>
+      <div class="flex gap-3 mt-6">
+        <button onclick="fecharModal('modal-login')"
+          class="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 transition">
+          Cancelar
+        </button>
+        <button onclick="doLogin()"
+          class="flex-1 bg-orange-500 hover:bg-orange-600 text-white rounded-lg py-2 text-sm font-medium transition">
+          Entrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL IMPORTAR PLANILHA -->
+  <div id="modal-importar" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md mx-4">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="bg-green-100 rounded-full p-2">
+          <i class="fas fa-file-excel text-green-600 text-xl"></i>
+        </div>
+        <h2 class="text-lg font-bold text-gray-700">Importar Planilha Excel</h2>
+      </div>
+      <p class="text-xs text-gray-500 mb-5">Selecione um arquivo .xlsx para atualizar os dados da tabela.</p>
+
+      <label class="block w-full border-2 border-dashed border-orange-200 rounded-xl p-6 text-center cursor-pointer hover:border-orange-400 transition">
+        <i class="fas fa-cloud-upload-alt text-3xl text-orange-300 mb-2"></i>
+        <p class="text-sm text-gray-500">Clique para selecionar o arquivo</p>
+        <p class="text-xs text-gray-400 mt-1">.xlsx, .xls</p>
+        <input id="file-input" type="file" accept=".xlsx,.xls" class="hidden" onchange="handleFileSelect(event)" />
+      </label>
+
+      <div id="file-name" class="mt-3 text-xs text-gray-500 text-center hidden"></div>
+      <div id="import-status" class="mt-2 text-xs text-center hidden"></div>
+
+      <div class="flex gap-3 mt-5">
+        <button onclick="fecharModal('modal-importar')"
+          class="flex-1 border border-gray-200 text-gray-600 rounded-lg py-2 text-sm hover:bg-gray-50 transition">
+          Cancelar
+        </button>
+        <button id="btn-processar" onclick="processarPlanilha()" disabled
+          class="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg py-2 text-sm font-medium transition">
+          <i class="fas fa-check mr-1"></i> Processar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de detalhe (linha expandida) -->
+  <div id="modal-detalhe" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <h2 id="modal-titulo" class="text-base font-bold text-orange-500"></h2>
+        <button onclick="fecharModal('modal-detalhe')"
+          class="text-gray-400 hover:text-gray-600 text-xl"><i class="fas fa-times"></i></button>
+      </div>
+      <div id="modal-conteudo" class="overflow-y-auto px-6 py-4 space-y-3 text-sm"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="static/app.js"></script>
+</body>
+</html>
