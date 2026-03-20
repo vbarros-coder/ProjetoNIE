@@ -294,7 +294,9 @@ function renderTabela() {
     abasPermitidas.forEach((aba, idx) => {
       const d = allData[aba];
       if (!d || !d.data || d.data.length === 0) return;
-      if (idx === 0 || headers.length === 0) headers = d.headers || [];
+      if (idx === 0 || headers.length === 0) {
+          headers = (d.headers || []).filter(h => !h.includes('__EMPTY'));
+      }
       d.data.forEach(row => rows.push({ ...row, '__aba__': aba }));
     });
   } else {
@@ -308,7 +310,7 @@ function renderTabela() {
 
     const d = allData[abaAtiva];
     if (d) {
-      headers = d.headers || [];
+      headers = (d.headers || []).filter(h => !h.includes('__EMPTY'));
       rows = (d.data || []).map(r => ({ ...r, '__aba__': abaAtiva }));
     }
   }
@@ -462,6 +464,9 @@ function abrirDetalheRow(row) {
   };
 
   h.forEach(key => {
+    // Filtro para ignorar chaves __EMPTY
+    if (key.includes('__EMPTY')) return;
+
     const val = row[key];
     if (!val && val !== 0) return;
     const div = document.createElement('div');
@@ -777,7 +782,8 @@ async function processarPlanilha() {
       if (!jsonRows.length) return;
       
       // Pegar os headers reais da primeira linha válida de dados (ou do objeto json)
-      const headers = Object.keys(jsonRows[0]);
+      // Filtrar __EMPTY logo na origem
+      const headers = Object.keys(jsonRows[0]).filter(h => !h.includes('__EMPTY'));
       
       // CORREÇÃO DO NOME DA ABA (Sheet Name)
       let finalSheetName = sheetName.trim();
