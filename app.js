@@ -254,7 +254,6 @@ async function carregarDados() {
           }
 
           // 2. Tentar identificar qual coluna é a Seguradora para esta aba
-          // (Recalcular cleanHeaders caso tenha sido transposto)
           const currentHeaders = Object.keys(finalRows[0] || {}).filter(h => !h.includes('__EMPTY'));
           
           let insurerKey = currentHeaders[0];
@@ -274,43 +273,32 @@ async function carregarDados() {
               });
 
               const uniqueVals = new Set(realVals);
-              let score = uniqueVals.size * 15; // Aumentar ainda mais o peso da unicidade
+              let score = uniqueVals.size * 20; // Peso altíssimo para unicidade
 
-              // BÔNUS: Campo detectado no Double Header
-              if (key === "NOME_SEGURADORA_REAL") {
-                  score += 500;
+              // BÔNUS: Campo detectado no Double Header (Hieraquia Superior)
+              if (key === "NOME_SEGURADORA_REAL" || key === "__nome_seguradora__") {
+                  score += 1000; // Prioridade absoluta
               }
 
-              // BÔNUS: Nome da coluna sugere ser seguradora
               if (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('COMPANHIA') || kUpper.includes('NOME')) {
                   score += 100;
               }
 
-              // PENALIDADE CRÍTICA: Se os valores contêm termos técnicos de prazo ou procedimento
-              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR'];
+              // PENALIDADE CRÍTICA: Se os valores contêm termos técnicos, formulários ou prazos
+              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'SISTEMA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS'];
               let technicalMatches = 0;
               realVals.forEach(v => {
                   const vu = v.toUpperCase();
                   if (technicalTerms.some(term => vu.includes(term))) technicalMatches++;
-                  // Se o valor for muito longo, provavelmente é um procedimento
-                  if (v.length > 35 || vu.includes('PROCEDIMENTO')) technicalMatches++;
+                  if (v.length > 30) technicalMatches++; // Nomes de seguradoras raramente passam de 30 caracteres
               });
 
               if (technicalMatches > 0) {
-                  score -= (technicalMatches * 20); // Penaliza cada ocorrência técnica
-              }
-
-              // PENALIDADE: Se os valores forem repetitivos
-              if (realVals.length > 5 && uniqueVals.size < (realVals.length / 2)) {
-                  score -= 200;
+                  score -= (technicalMatches * 50); 
               }
 
               const avgLength = realVals.length > 0 ? realVals.reduce((a, b) => a + b.length, 0) / realVals.length : 0;
-              if (avgLength > 30) score -= 200;
-              if (avgLength > 60) score -= 500;
-
-              const statusCount = values.filter(v => ['SIM','NÃO','NAO','S','N'].includes(v.toUpperCase())).length;
-              if (statusCount > values.length / 2) score -= 300;
+              if (avgLength > 25) score -= 300; // Nomes de seguradoras são curtos
 
               if (score > maxScore) {
                   maxScore = score;
