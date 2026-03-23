@@ -222,46 +222,80 @@ async function carregarDados() {
               return !hu.includes('__EMPTY') && hu !== 'UNDEFINED' && hu !== 'NULL' && hu !== '';
           });
 
+          let finalRows = content.data || [];
+
+          // --- REPARO DE EMERGÊNCIA: Detectar se o JSON está transposto (Procedimentos como linhas) ---
+          const firstColKeywords = ['SEGURADORA', 'SISTEMA', 'SLA', 'VISTORIA', 'ASSUNTO', 'RELATÓRIO', 'HONORÁRIO', 'DADOS DA'];
+          let kwMatches = 0;
+          const firstKey = cleanHeaders[0];
+          finalRows.slice(0, 10).forEach(r => {
+              const val = String(r[firstKey] || '').toUpperCase();
+              if (firstColKeywords.some(k => val.includes(k))) kwMatches++;
+          });
+
+          if (kwMatches > 3) {
+              console.log(`Aba ${finalAba} carregada como TRANSPOSTA. Corrigindo em tempo real...`);
+              const repairedRows = [];
+              // Cada header (exceto o primeiro que é o label) é uma seguradora
+              for (let i = 1; i < cleanHeaders.length; i++) {
+                  const insurerCol = cleanHeaders[i];
+                  const newRow = { "Seguradora": insurerCol };
+                  finalRows.forEach(origRow => {
+                      const label = String(origRow[firstKey] || '').trim();
+                      if (label) newRow[label] = origRow[insurerCol];
+                  });
+                  repairedRows.push(newRow);
+              }
+              finalRows = repairedRows;
+              // O header agora é apenas os labels encontrados
+              const newHeaders = ["Seguradora", ...finalRows.map(r => Object.keys(r)).flat()];
+              // (Simplificando: carregarDados vai re-gerar cleanHeaders abaixo)
+          }
+
           // 2. Tentar identificar qual coluna é a Seguradora para esta aba
-          // Olhamos as primeiras 20 linhas para ver qual coluna tem nomes de empresas (não SIM/NÃO)
-          let insurerKey = cleanHeaders[0];
-          const sampleRows = (content.data || []).slice(0, 20);
+          // (Recalcular cleanHeaders caso tenha sido transposto)
+          const currentHeaders = Object.keys(finalRows[0] || {}).filter(h => !h.includes('__EMPTY'));
+          
+          let insurerKey = currentHeaders[0];
+          const sampleRows = finalRows.slice(0, 20);
           
           let bestCol = null;
-          let maxUniques = -1;
+          let maxScore = -1000;
 
-          for (const key of cleanHeaders) {
+          for (const key of currentHeaders) {
               const kUpper = key.toUpperCase().trim();
               const values = sampleRows.map(r => String(r[key] || '').trim());
               
-              // Contar quantos valores não são status e são únicos
-              const uniqueVals = new Set(values.filter(val => {
+              const realVals = values.filter(val => {
                   const vU = val.toUpperCase();
                   return vU !== '' && vU !== 'SIM' && vU !== 'NÃO' && vU !== 'NAO' && vU !== 'S' && vU !== 'N' && 
                          vU !== 'SEM INFORMAÇÃO' && vU !== 'SEM INFORMACAO' && vU !== 'OK' && val.length > 2;
-              }));
+              });
 
-              let score = uniqueVals.size;
-              // Bônus se o nome da coluna sugerir que é o nome da seguradora
+              const uniqueVals = new Set(realVals);
+              let score = uniqueVals.size * 5;
+
               if (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('COMPANHIA') || kUpper.includes('NOME')) {
-                  score += 10;
-              }
-              // Penalizar se a maioria dos valores for SIM/NÃO
-              const statusCount = values.filter(v => ['SIM','NÃO','NAO','S','N'].includes(v.toUpperCase())).length;
-              if (statusCount > values.length / 2) {
-                  score -= 20;
+                  score += 50;
               }
 
-              if (score > maxUniques) {
-                  maxUniques = score;
+              const avgLength = realVals.length > 0 ? realVals.reduce((a, b) => a + b.length, 0) / realVals.length : 0;
+              if (avgLength > 40) score -= 150;
+              if (avgLength > 80) score -= 300;
+
+              const statusCount = values.filter(v => ['SIM','NÃO','NAO','S','N'].includes(v.toUpperCase())).length;
+              if (statusCount > values.length / 2) score -= 150;
+
+              if (score > maxScore) {
+                  maxScore = score;
                   bestCol = key;
               }
           }
 
           if (bestCol) insurerKey = bestCol;
 
-          // 3. Limpar Rows
-          const cleanRows = (content.data || []).map(row => {
+          // 3. Limpar Rows finais
+          const cleanRows = finalRows.map(row => {
               const newRow = {};
               for (const key in row) {
                   const kUpper = String(key).toUpperCase().trim();
@@ -280,22 +314,14 @@ async function carregarDados() {
               }
               return newRow;
           }).filter(row => {
-              const keys = Object.keys(row);
-              if (!keys.length) return false;
-              
               const val = String(row[insurerKey] || '').toUpperCase().trim();
-              
-              // Filtro de linha de lixo: se a coluna de nome estiver vazia ou for um status
               if (val === '' || val === 'SIM' || val === 'NÃO' || val === 'NAO' || val === 'S' || val === 'N') return false;
-
-              // Se a linha for um título de seção, descarta
               const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'SLA', 'CONTATOS', 'PROPERTY', 'RCG', 'RCP', 'GARANTIA', 'ESTIMATIVA'];
               if (blacklisted.some(t => val.includes(t) && val.length < 25)) return false;
-
               return true;
           });
           
-          allData[finalAba] = { headers: cleanHeaders, data: cleanRows, insurerKey: insurerKey };
+          allData[finalAba] = { headers: Object.keys(cleanRows[0] || {}), data: cleanRows, insurerKey: insurerKey };
       }
 
     inicializarInterface();
@@ -774,15 +800,68 @@ async function processarPlanilha() {
       // Lê os dados a partir dessa linha encontrada
       let jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '', range: headerIdx });
       
-      // Mesclar topHeaders se existirem (para casos de Double Header)
-      if (topHeaders.length > 0) {
+      // --- DETECÇÃO DE PLANILHA TRANSPOSTA (Seguradoras em colunas, Procedimentos em linhas) ---
+      // Se a primeira coluna tem muitos nomes de procedimentos, é transposta.
+      const firstColKeywords = ['SEGURADORA', 'SISTEMA', 'SLA', 'VISTORIA', 'ASSUNTO', 'RELATÓRIO', 'HONORÁRIO', 'DADOS DA'];
+      let keywordMatches = 0;
+      const sampleLimit = Math.min(jsonRows.length, 15);
+      
+      for (let i = 0; i < sampleLimit; i++) {
+          const firstKey = Object.keys(jsonRows[i])[0];
+          const val = String(jsonRows[i][firstKey] || '').toUpperCase();
+          if (firstColKeywords.some(k => val.includes(k))) keywordMatches++;
+      }
+
+      const isTransposed = keywordMatches > 3;
+
+      if (isTransposed) {
+          console.log(`Aba ${sheetName} detectada como TRANSPOSTA. Transpondo...`);
+          const transposedRows = [];
+          const keys = Object.keys(jsonRows[0]); // Chaves originais (__EMPTY, __EMPTY_1...)
+          
+          // Cada chave (coluna) a partir da 1ª (index 1) é uma seguradora
+          for (let colIdx = 1; colIdx < keys.length; colIdx++) {
+              const colKey = keys[colIdx];
+              const newRow = {};
+              
+              // O nome da seguradora deve estar no topHeaders (se existir) ou no primeiro valor da coluna
+              let insurerName = (topHeaders && topHeaders[colIdx]) || "";
+              
+              // Se não achou no topHeaders, tenta achar na primeira linha de dados
+              if (!insurerName || ['SIM','NÃO','NAO','S','N'].includes(insurerName.toUpperCase())) {
+                  // Procura o primeiro valor que pareça um nome na coluna
+                  for (let i = 0; i < jsonRows.length; i++) {
+                      const v = String(jsonRows[i][colKey] || '').trim();
+                      if (v.length > 3 && !['SIM','NÃO','NAO','S','N','OK','SEM INFORMAÇÃO'].includes(v.toUpperCase())) {
+                          insurerName = v;
+                          break;
+                      }
+                  }
+              }
+
+              if (!insurerName) continue; // Pula se não achou nome
+
+              newRow["Seguradora"] = insurerName;
+              
+              // Preenche os outros campos (procedimentos)
+              jsonRows.forEach(origRow => {
+                  const labelKey = Object.keys(origRow)[0];
+                  const label = String(origRow[labelKey] || '').trim();
+                  if (label && label.length > 2) {
+                      newRow[label] = origRow[colKey];
+                  }
+              });
+              
+              transposedRows.push(newRow);
+          }
+          jsonRows = transposedRows;
+      } else if (topHeaders.length > 0) {
+          // Mesclar topHeaders se existirem (para casos de Double Header não-transposto)
           jsonRows = jsonRows.map(row => {
               const keys = Object.keys(row);
               keys.forEach((key, idx) => {
                   const topVal = topHeaders[idx];
-                  // Se o valor da célula for SIM/NÃO, e o topo tiver um nome, talvez o nome seja a seguradora
                   if (topVal && topVal.length > 2 && !['SIM','NÃO','NAO','S','N'].includes(topVal.toUpperCase())) {
-                      // Se a chave atual for genérica (__EMPTY), renomeia ou anexa
                       if (key.includes('__EMPTY')) {
                           row[topVal] = row[key];
                       }
