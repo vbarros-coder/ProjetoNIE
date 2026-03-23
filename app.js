@@ -75,13 +75,14 @@ function getAbasPermitidas() {
     const allowedLower = allowed.map(k => k.toLowerCase().trim());
     
     // Verifica se é um login de "Grupo" (geral) ou individual
-    const isGeral = userSector.endsWith('-geral') || userSector === 'property';
+    const isGeral = userSector.endsWith('-geral') || userSector === 'property' || userSector === 'financeiro' || userSector === 'faturamento' || userSector === 'riscos-diversos';
 
     return abas.filter(aba => {
         const a = aba.toLowerCase().trim();
 
         if (!isGeral) {
             // Match exato para logins de unidade (insensível a maiúsculas/minúsculas e espaços)
+            // Se for property-sla, deve mostrar apenas a aba property-sla
             return allowedLower.includes(a);
         }
 
@@ -340,9 +341,15 @@ async function carregarDados() {
               return newRow;
           }).filter(row => {
               const val = String(row[insurerKey] || '').toUpperCase().trim();
-              if (val === '' || val === 'SIM' || val === 'NÃO' || val === 'NAO' || val === 'S' || val === 'N') return false;
-              const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'SLA', 'CONTATOS', 'PROPERTY', 'RCG', 'RCP', 'GARANTIA', 'ESTIMATIVA'];
+              
+              // Se a coluna identificada como seguradora estiver vazia, ignora a linha
+              if (val === '') return false;
+
+              // REGRAS MAIS FLEXÍVEIS: Não descarta seguradoras que tenham SIM/NÃO no nome,
+              // pois algumas abas podem estar desalinhadas. Apenas descarta se for título de seção óbvio.
+              const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA'];
               if (blacklisted.some(t => val.includes(t) && val.length < 25)) return false;
+
               return true;
           });
           
