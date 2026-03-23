@@ -115,7 +115,12 @@ function getAbasPermitidas() {
         if (!isGeral) {
             // Match exato e estrito para logins de unidade
             // Se for 'property-sla', deve bater exatamente com 'property (sla)'
-            return allowedLower.some(k => a === k || a === k.replace(/\s+/g, ' '));
+            // Removemos espaços para comparar de forma mais segura contra erros de digitação nas abas
+            return allowedLower.some(k => {
+                const cleanK = k.replace(/\s+/g, '');
+                const cleanA = a.replace(/\s+/g, '');
+                return cleanA === cleanK;
+            });
         }
 
         // Match flexível para logins -geral (ex: 'property' deve ver tudo que contém 'property')
@@ -402,14 +407,16 @@ async function carregarDados() {
               const blacklisted = [
                 'INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA', 'RETER', 'D.V.N', 
                 'RETER A D.V.N', 'SIM', 'NÃO', 'NAO', 'OK', 'SEGURADORA', 'SISTEMA', 
-                'HONORÁRIOS', 'VALOR', 'SLA', 'VISTORIA', 'ASSUNTO', 'RELATÓRIO'
+                'HONORÁRIOS', 'VALOR', 'SLA', 'VISTORIA', 'ASSUNTO', 'RELATÓRIO',
+                'REGULAÇÃO', 'REGULACAO', 'MODELO', 'PRÓPRIO', 'PROPRIO'
               ];
               
               if (blacklisted.some(t => val === t || (val.includes(t) && val.length < 25))) return false;
               
               // Se a maioria das colunas estiver vazia ou contiver apenas Sim/Não, pode ser uma linha de lixo
+              // Reduzido para 1 para garantir que seguradoras com pouca informação preenchida não sumam
               const filledCols = values.filter(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v.length > 2).length;
-              if (filledCols < 2) return false;
+              if (filledCols < 1) return false;
 
               return true;
           });
@@ -724,7 +731,7 @@ function getNomeSeguradora(row, headers) {
     if (n && n.length > 2 && n.length < 40) {
       const nu = String(n).toUpperCase().trim();
       // Não pode ser sim/não ou termos técnicos
-      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA','S','N','RETER','D.V.N','RETER A D.V.N'].includes(nu)) return corrigirTexto(n);
+      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA','S','N','RETER','D.V.N','RETER A D.V.N','REGULAÇÃO','REGULACAO','PRÓPRIO','PROPRIO'].includes(nu)) return corrigirTexto(n);
     }
   }
 
@@ -732,14 +739,15 @@ function getNomeSeguradora(row, headers) {
   const badValues = [
     'sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 
     'conforme apólice', 'ok', 's', 'n', 'seguradora', 'sistema', 'procedimento', 
-    'reter', 'd.v.n', 'reter a d.v.n'
+    'reter', 'd.v.n', 'reter a d.v.n', 'regulação', 'regulacao', 'próprio', 'proprio'
   ];
   
   const technicalTerms = [
     'ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 
     'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 
     'PREJUIZO', 'VALOR', 'SLA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS', 
-    'CONTUDO', 'USAMOS', 'MODELO', 'SIMPLIFICADO', 'RETER', 'D.V.N', 'REGRAS'
+    'CONTUDO', 'USAMOS', 'MODELO', 'SIMPLIFICADO', 'RETER', 'D.V.N', 'REGRAS',
+    'REGULAÇÃO', 'REGULACAO', 'PRÓPRIO', 'PROPRIO'
   ];
 
   // 3. Procurar em todas as colunas
