@@ -313,6 +313,11 @@ async function carregarDados() {
               const newRow = {};
               for (const key in row) {
                   const kUpper = String(key).toUpperCase().trim();
+                  // Preservar chaves de controle
+                  if (key === '__nome_seguradora__' || key === 'NOME_SEGURADORA_REAL' || key === '__insurer_name__') {
+                      newRow[key] = row[key];
+                      continue;
+                  }
                   if (!kUpper.includes('__EMPTY') && kUpper !== 'UNDEFINED' && kUpper !== 'NULL') {
                       let finalKey = key;
                       if (key.toLowerCase().includes('trabalhist') && !key.toLowerCase().includes('trabalhista')) {
@@ -328,13 +333,15 @@ async function carregarDados() {
               }
               return newRow;
           }).filter(row => {
+              // REMOVER LINHAS QUE SÃO APENAS REPETIÇÃO DO CABEÇALHO
+              const keys = Object.keys(row).filter(k => !k.startsWith('__'));
+              const values = keys.map(k => String(row[k]).toUpperCase().trim());
+              const headerMatches = keys.filter(k => values.includes(k.toUpperCase().trim())).length;
+              if (headerMatches > (keys.length / 2)) return false;
+
               const val = String(row[insurerKey] || '').toUpperCase().trim();
-              
-              // Se a coluna identificada como seguradora estiver vazia, ignora a linha
               if (val === '') return false;
 
-              // REGRAS MAIS FLEXÍVEIS: Não descarta seguradoras que tenham SIM/NÃO no nome,
-              // pois algumas abas podem estar desalinhadas. Apenas descarta se for título de seção óbvio.
               const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA'];
               if (blacklisted.some(t => val.includes(t) && val.length < 25)) return false;
 
@@ -645,36 +652,42 @@ function corrigirTexto(t) {
 
 // ── Detectar nome da seguradora no row ───────────────────────────
 function getNomeSeguradora(row, headers) {
-  // 1. PRIORIDADE MÁXIMA: Campo especial que adicionamos no pre-processamento ou Double Header
-  if (row['__nome_seguradora__']) return corrigirTexto(row['__nome_seguradora__']);
-  if (row['NOME_SEGURADORA_REAL']) return corrigirTexto(row['NOME_SEGURADORA_REAL']);
-
-  // 2. Coluna 'Seguradora' se tiver valor real (não Sim/Não)
-  const seg = row['Seguradora'] || row['SEGURADORA'] || '';
-  const badValues = ['sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 'conforme apólice', 'ok', 's', 'n'];
-  if (seg && !badValues.includes(seg.toLowerCase().trim()) && seg.length > 2 && seg.length < 50) {
-    return corrigirTexto(seg);
-  }
-
-  // 3. Procurar em outras colunas por um nome que pareça empresa
-  const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'SISTEMA'];
-
-  for (const h of headers) {
-    if (h.startsWith('__')) continue;
-    const v = String(row[h] || '').trim();
-    if (!v || v.length < 3 || v.length > 50) continue;
-    
-    const vu = v.toUpperCase();
-    if (badValues.includes(vu.toLowerCase())) continue;
-    if (technicalTerms.some(term => vu.includes(term))) continue;
-    
-    // Se começar com letra maiúscula e não for um termo técnico, é um forte candidato
-    if (/^[A-ZÁÉÍÓÚÃÕÂÊÔ]/.test(v)) {
-      return corrigirTexto(v);
+  // 1. PRIORIDADE MÁXIMA: Campos injetados pelo sistema
+  const nomesInjetados = [row['__nome_seguradora__'], row['NOME_SEGURADORA_REAL'], row['__insurer_name__']];
+  for (const n of nomesInjetados) {
+    if (n && n.length > 2 && n.length < 40) {
+      const nu = String(n).toUpperCase();
+      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA'].includes(nu)) return corrigirTexto(n);
     }
   }
 
-  return 'Seguradora';
+  // 2. LISTA NEGRA ESTRITA: Coisas que NUNCA podem ser títulos
+  const badValues = ['sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 'conforme apólice', 'ok', 's', 'n', 'seguradora', 'sistema', 'procedimento'];
+  const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS', 'CONTUDO', 'USAMOS', 'MODELO', 'SIMPLIFICADO'];
+
+  // 3. Procurar em todas as colunas
+  let bestCandidate = null;
+  
+  for (const h of headers) {
+    const v = String(row[h] || '').trim();
+    if (!v || v.length < 3 || v.length > 40) continue;
+    
+    const vu = v.toUpperCase();
+    if (badValues.includes(vu.toLowerCase())) continue;
+    
+    // Se contém termos técnicos ou frases longas, descarta
+    const hasTechnical = technicalTerms.some(term => vu.includes(term));
+    if (hasTechnical) continue;
+
+    // Se começa com letra maiúscula e é curto, é um ótimo candidato
+    if (/^[A-ZÁÉÍÓÚÃÕÂÊÔ]/.test(v)) {
+      if (!bestCandidate) bestCandidate = v;
+      // Se a própria coluna se chamar "Seguradora" e o valor for bom, retorna na hora
+      if (h.toUpperCase().includes('SEGURADORA')) return corrigirTexto(v);
+    }
+  }
+
+  return bestCandidate ? corrigirTexto(bestCandidate) : 'Seguradora';
 }
 
 function highlightText(html, term) {
