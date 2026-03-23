@@ -13,8 +13,40 @@ const DEFAULT_PASS_HASH = '97310a54bfb0de4f089997d00f8b908c39e9064ee9438893010d4
 const SECTORS_CONFIG = {
   // --- Logins Individuais por Unidade (Acesso Único e Estrito) ---
   'property-sla': { 
-    allowedTabs: ['PROPERTY (SLA)'],
+    allowedTabs: ['PROPERTY (SLA)'], 
     passHash: '0e1efb99794ba6352960aad911a3d98ec664a4fbd677d18227921262ea7a613e' // Grupo2003
+  },
+  'garantia-executante': {
+    allowedTabs: ['Garantia - Executante'],
+    passHash: '6cc0606990999099909990999099909990999099909990999099909990999099' // Operacao2015 (Placeholder - Hash real necessário)
+  },
+  'garantia-trabalhista': {
+    allowedTabs: ['Garantia - Adicional Trabalhista'],
+    passHash: 'b09267b099909990999099909990999099909990999099909990999099909990' // Adicional2015 (Placeholder)
+  },
+  'garantia-ecto': {
+    allowedTabs: ['Garantia - ECTO'],
+    passHash: '7c9267b099909990999099909990999099909990999099909990999099909990' // Sto2018 (Placeholder)
+  },
+  'garantia-judicial': {
+    allowedTabs: ['Garantia Judicial'],
+    passHash: 'd09267b099909990999099909990999099909990999099909990999099909990' // SGJudicial1/19 (Placeholder)
+  },
+  'garantia-ressarcimento': {
+    allowedTabs: ['Garantia - Ressarcimento'],
+    passHash: 'e09267b099909990999099909990999099909990999099909990999099909990' // Administrativo123 (Placeholder)
+  },
+  'rcg-sla': {
+    allowedTabs: ['RCG (SLA)'],
+    passHash: 'f09267b099909990999099909990999099909990999099909990999099909990' // RCG2026 (Placeholder)
+  },
+  'rcp-sla': {
+    allowedTabs: ['RCP (SLA)'],
+    passHash: 'a09267b099909990999099909990999099909990999099909990999099909990' // RCP33 (Placeholder)
+  },
+  'boticario': {
+    allowedTabs: ['Boticário'],
+    passHash: 'c09267b099909990999099909990999099909990999099909990999099909990' // boticario123 (Placeholder)
   },
   'property-focais': { allowedTabs: ['PROPERTY (Focais)'] },
   'rcg-sla': { 
