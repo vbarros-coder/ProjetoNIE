@@ -113,9 +113,9 @@ function getAbasPermitidas() {
         const a = aba.toLowerCase().trim();
 
         if (!isGeral) {
-            // Match exato para logins de unidade (insensível a maiúsculas/minúsculas e espaços)
-            // Se for property-sla, deve mostrar apenas a aba property-sla
-            return allowedLower.includes(a);
+            // Match exato e estrito para logins de unidade
+            // Se for 'property-sla', deve bater exatamente com 'property (sla)'
+            return allowedLower.some(k => a === k || a === k.replace(/\s+/g, ' '));
         }
 
         // Match flexível para logins -geral (ex: 'property' deve ver tudo que contém 'property')
@@ -390,10 +390,15 @@ async function carregarDados() {
               const headerMatches = keys.filter(k => values.includes(k.toUpperCase().trim())).length;
               if (headerMatches > (keys.length / 2)) return false;
 
-              const val = String(row[insurerKey] || '').toUpperCase().trim();
-              if (val === '') return false;
+              // Identificar o nome da seguradora para esta linha específica
+              const nome = getNomeSeguradora(row, keys);
+              
+              // SE O NOME FOR GENÉRICO ("Seguradora") OU VAZIO, REMOVE A LINHA
+              // Isso limpa cartões fantasmas ou linhas de lixo da planilha
+              if (!nome || nome === 'Seguradora' || nome.trim() === '') return false;
 
               // BLACKLIST AGRESSIVA: Remover linhas que parecem títulos de seção ou lixo técnico
+              const val = nome.toUpperCase().trim();
               const blacklisted = [
                 'INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA', 'RETER', 'D.V.N', 
                 'RETER A D.V.N', 'SIM', 'NÃO', 'NAO', 'OK', 'SEGURADORA', 'SISTEMA', 
@@ -403,8 +408,8 @@ async function carregarDados() {
               if (blacklisted.some(t => val === t || (val.includes(t) && val.length < 25))) return false;
               
               // Se a maioria das colunas estiver vazia ou contiver apenas Sim/Não, pode ser uma linha de lixo
-              const filledCols = values.filter(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO').length;
-              if (filledCols < 2 && val.length < 5) return false;
+              const filledCols = values.filter(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO' && v.length > 2).length;
+              if (filledCols < 2) return false;
 
               return true;
           });
