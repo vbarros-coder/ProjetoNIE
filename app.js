@@ -273,29 +273,43 @@ async function carregarDados() {
               });
 
               const uniqueVals = new Set(realVals);
-              let score = uniqueVals.size * 10; // Aumentar peso da unicidade
+              let score = uniqueVals.size * 15; // Aumentar ainda mais o peso da unicidade
 
               // BÔNUS: Campo detectado no Double Header
               if (key === "NOME_SEGURADORA_REAL") {
-                  score += 200;
+                  score += 500;
               }
 
+              // BÔNUS: Nome da coluna sugere ser seguradora
               if (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('COMPANHIA') || kUpper.includes('NOME')) {
-                  score += 50;
+                  score += 100;
               }
 
-              // PENALIDADE: Se os valores forem repetitivos (ex: "Conforme apólice")
-              // Se tiver muitos dados mas poucos únicos, penaliza
-              if (realVals.length > 5 && uniqueVals.size < (realVals.length / 3)) {
-                  score -= 100;
+              // PENALIDADE CRÍTICA: Se os valores contêm termos técnicos de prazo ou procedimento
+              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME'];
+              let technicalMatches = 0;
+              realVals.forEach(v => {
+                  const vu = v.toUpperCase();
+                  if (technicalTerms.some(term => vu.includes(term))) technicalMatches++;
+                  // Se o valor for muito longo, provavelmente é um procedimento
+                  if (v.length > 35) technicalMatches++;
+              });
+
+              if (technicalMatches > 0) {
+                  score -= (technicalMatches * 20); // Penaliza cada ocorrência técnica
+              }
+
+              // PENALIDADE: Se os valores forem repetitivos
+              if (realVals.length > 5 && uniqueVals.size < (realVals.length / 2)) {
+                  score -= 200;
               }
 
               const avgLength = realVals.length > 0 ? realVals.reduce((a, b) => a + b.length, 0) / realVals.length : 0;
-              if (avgLength > 40) score -= 150;
-              if (avgLength > 80) score -= 300;
+              if (avgLength > 30) score -= 200;
+              if (avgLength > 60) score -= 500;
 
               const statusCount = values.filter(v => ['SIM','NÃO','NAO','S','N'].includes(v.toUpperCase())).length;
-              if (statusCount > values.length / 2) score -= 150;
+              if (statusCount > values.length / 2) score -= 300;
 
               if (score > maxScore) {
                   maxScore = score;
