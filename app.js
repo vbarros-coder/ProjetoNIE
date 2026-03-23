@@ -727,21 +727,18 @@ function corrigirTexto(t) {
 function getNomeSeguradora(row, headers) {
   // 1. PRIORIDADE MÁXIMA: Campos injetados pelo sistema
   const nomesInjetados = [row['__nome_seguradora__'], row['NOME_SEGURADORA_REAL'], row['__insurer_name__']];
+  
+  // Regex para termos proibidos (mais flexível com acentos e espaços)
+  const forbiddenRegex = /^(SIM|NÃO|NAO|S|N|SEGURADORA|SISTEMA|RETER|D\.V\.N|REGULA[ÇC][ÃA]O|PR[ÓO]PRIO|MODELO|SLA|ASSUNTO|VISTORIA|RELAT[ÓO]RIO|HONOR[ÁA]RIOS|VALOR|DADOS|CONTATO|CADASTRO|PF|PJ|ORIENTA[ÇC][ÃA]O|PADR[ÃA]O|ESTIMATIVA)$/i;
+
   for (const n of nomesInjetados) {
     if (n && n.length > 2 && n.length < 40) {
       const nu = String(n).toUpperCase().trim();
-      // Não pode ser sim/não ou termos técnicos
-      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA','S','N','RETER','D.V.N','RETER A D.V.N','REGULAÇÃO','REGULACAO','PRÓPRIO','PROPRIO'].includes(nu)) return corrigirTexto(n);
+      if (!forbiddenRegex.test(nu)) return corrigirTexto(n);
     }
   }
 
-  // 2. LISTA NEGRA ESTRITA: Coisas que NUNCA podem ser títulos
-  const badValues = [
-    'sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 
-    'conforme apólice', 'ok', 's', 'n', 'seguradora', 'sistema', 'procedimento', 
-    'reter', 'd.v.n', 'reter a d.v.n', 'regulação', 'regulacao', 'próprio', 'proprio'
-  ];
-  
+  // 2. LISTA NEGRA ESTRITA E TERMOS TÉCNICOS
   const technicalTerms = [
     'ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 
     'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 
@@ -757,15 +754,17 @@ function getNomeSeguradora(row, headers) {
     const v = String(row[h] || '').trim();
     if (!v || v.length < 3 || v.length > 40) continue;
     
-    const vu = v.toUpperCase();
-    if (badValues.includes(vu.toLowerCase())) continue;
+    const vu = v.toUpperCase().trim();
+    
+    // Se bater no Regex de proibidos, pula na hora
+    if (forbiddenRegex.test(vu)) continue;
     
     // Se contém termos técnicos ou frases longas, descarta
     const hasTechnical = technicalTerms.some(term => vu.includes(term));
     if (hasTechnical) continue;
 
-    // Se a própria coluna se chamar "Seguradora" e o valor for bom, retorna na hora
-    if (h.toUpperCase().includes('SEGURADORA') && !badValues.includes(vu.toLowerCase())) {
+    // Se a própria coluna se chamar "Seguradora", retorna na hora (se não for proibido)
+    if (h.toUpperCase().includes('SEGURADORA')) {
         return corrigirTexto(v);
     }
 
