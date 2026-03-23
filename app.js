@@ -286,13 +286,13 @@ async function carregarDados() {
               }
 
               // PENALIDADE CRÍTICA: Se os valores contêm termos técnicos de prazo ou procedimento
-              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME'];
+              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR'];
               let technicalMatches = 0;
               realVals.forEach(v => {
                   const vu = v.toUpperCase();
                   if (technicalTerms.some(term => vu.includes(term))) technicalMatches++;
                   // Se o valor for muito longo, provavelmente é um procedimento
-                  if (v.length > 35) technicalMatches++;
+                  if (v.length > 35 || vu.includes('PROCEDIMENTO')) technicalMatches++;
               });
 
               if (technicalMatches > 0) {
