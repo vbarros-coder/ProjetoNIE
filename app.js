@@ -222,14 +222,28 @@ document.addEventListener('DOMContentLoaded', () => {
 async function carregarDados() {
   try {
     let rawData = {};
-    // Tenta carregar do localStorage (se importado pelo admin)
-    const localData = localStorage.getItem('av_dados');
-    if (localData) {
-      rawData = JSON.parse(localData);
-    } else {
-      const resp = await fetch('dados.json');
-      if (!resp.ok) throw new Error('Falha ao carregar dados');
-      rawData = await resp.json();
+    
+    // 1. Tentar buscar primeiro do servidor (com bypass de cache)
+    // Isso garante que todos os dispositivos (celulares/PCs) vejam a versão mais recente do arquivo dados.json no GitHub/Vercel.
+    try {
+      const cacheBuster = `v=${new Date().getTime()}`;
+      const resp = await fetch(`dados.json?${cacheBuster}`);
+      if (resp.ok) {
+        rawData = await resp.json();
+        console.log('Dados carregados do servidor (dados.json) com sucesso.');
+      } else {
+        throw new Error('Servidor não retornou dados.json');
+      }
+    } catch (fetchErr) {
+      console.warn('Falha ao buscar do servidor, tentando localStorage...', fetchErr);
+      // Fallback para localStorage (importação local do admin)
+      const localData = localStorage.getItem('av_dados');
+      if (localData) {
+        rawData = JSON.parse(localData);
+        console.log('Dados carregados do localStorage.');
+      } else {
+        throw new Error('Nenhum dado disponível localmente ou no servidor.');
+      }
     }
 
     // LIMPEZA GLOBAL DE DADOS (Remover __EMPTY de todas as abas e headers)
@@ -317,7 +331,12 @@ async function carregarDados() {
               }
 
               // PENALIDADE CRÍTICA: Se os valores contêm termos técnicos, formulários ou prazos
-              const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'SISTEMA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS'];
+              const technicalTerms = [
+                'ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 
+                'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 
+                'PREJUIZO', 'VALOR', 'SLA', 'SISTEMA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 
+                'DADOS', 'RETER', 'D.V.N', 'RETER A D.V.N', 'ESTIMATIVA', 'HONORÁRIOS', 'REGRAS'
+              ];
               let technicalMatches = 0;
               realVals.forEach(v => {
                   const vu = v.toUpperCase();
@@ -374,8 +393,18 @@ async function carregarDados() {
               const val = String(row[insurerKey] || '').toUpperCase().trim();
               if (val === '') return false;
 
-              const blacklisted = ['INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA'];
-              if (blacklisted.some(t => val.includes(t) && val.length < 25)) return false;
+              // BLACKLIST AGRESSIVA: Remover linhas que parecem títulos de seção ou lixo técnico
+              const blacklisted = [
+                'INFORMAÇÕES', 'DADOS DA', 'CONTATOS', 'ESTIMATIVA', 'RETER', 'D.V.N', 
+                'RETER A D.V.N', 'SIM', 'NÃO', 'NAO', 'OK', 'SEGURADORA', 'SISTEMA', 
+                'HONORÁRIOS', 'VALOR', 'SLA', 'VISTORIA', 'ASSUNTO', 'RELATÓRIO'
+              ];
+              
+              if (blacklisted.some(t => val === t || (val.includes(t) && val.length < 25))) return false;
+              
+              // Se a maioria das colunas estiver vazia ou contiver apenas Sim/Não, pode ser uma linha de lixo
+              const filledCols = values.filter(v => v !== '' && v !== 'SIM' && v !== 'NÃO' && v !== 'NAO').length;
+              if (filledCols < 2 && val.length < 5) return false;
 
               return true;
           });
@@ -688,14 +717,25 @@ function getNomeSeguradora(row, headers) {
   const nomesInjetados = [row['__nome_seguradora__'], row['NOME_SEGURADORA_REAL'], row['__insurer_name__']];
   for (const n of nomesInjetados) {
     if (n && n.length > 2 && n.length < 40) {
-      const nu = String(n).toUpperCase();
-      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA'].includes(nu)) return corrigirTexto(n);
+      const nu = String(n).toUpperCase().trim();
+      // Não pode ser sim/não ou termos técnicos
+      if (!['SIM','NÃO','NAO','SEGURADORA','SISTEMA','S','N','RETER','D.V.N','RETER A D.V.N'].includes(nu)) return corrigirTexto(n);
     }
   }
 
   // 2. LISTA NEGRA ESTRITA: Coisas que NUNCA podem ser títulos
-  const badValues = ['sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 'conforme apólice', 'ok', 's', 'n', 'seguradora', 'sistema', 'procedimento'];
-  const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS', 'CONTUDO', 'USAMOS', 'MODELO', 'SIMPLIFICADO'];
+  const badValues = [
+    'sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 
+    'conforme apólice', 'ok', 's', 'n', 'seguradora', 'sistema', 'procedimento', 
+    'reter', 'd.v.n', 'reter a d.v.n'
+  ];
+  
+  const technicalTerms = [
+    'ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 
+    'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 
+    'PREJUIZO', 'VALOR', 'SLA', 'FORMULARIO', 'PF', 'PJ', 'CADASTRO', 'DADOS', 
+    'CONTUDO', 'USAMOS', 'MODELO', 'SIMPLIFICADO', 'RETER', 'D.V.N', 'REGRAS'
+  ];
 
   // 3. Procurar em todas as colunas
   let bestCandidate = null;
@@ -711,11 +751,14 @@ function getNomeSeguradora(row, headers) {
     const hasTechnical = technicalTerms.some(term => vu.includes(term));
     if (hasTechnical) continue;
 
+    // Se a própria coluna se chamar "Seguradora" e o valor for bom, retorna na hora
+    if (h.toUpperCase().includes('SEGURADORA') && !badValues.includes(vu.toLowerCase())) {
+        return corrigirTexto(v);
+    }
+
     // Se começa com letra maiúscula e é curto, é um ótimo candidato
     if (/^[A-ZÁÉÍÓÚÃÕÂÊÔ]/.test(v)) {
       if (!bestCandidate) bestCandidate = v;
-      // Se a própria coluna se chamar "Seguradora" e o valor for bom, retorna na hora
-      if (h.toUpperCase().includes('SEGURADORA')) return corrigirTexto(v);
     }
   }
 
@@ -1098,17 +1141,39 @@ async function processarPlanilha() {
 
     inicializarInterface();
 
-    statusEl.textContent = `✅ ${Object.keys(newData).length} abas importadas com sucesso!`;
-    statusEl.className = 'mt-2 text-xs text-center text-green-600';
+    statusEl.innerHTML = `
+      <div class="flex flex-col items-center gap-2">
+        <span class="text-green-600 font-bold">✅ ${Object.keys(newData).length} abas importadas!</span>
+        <button onclick="downloadDadosJSON()" class="bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-3 py-1 rounded-full flex items-center gap-1 transition-all">
+          <i class="fas fa-download"></i> BAIXAR DADOS.JSON PARA O GITHUB
+        </button>
+        <p class="text-[9px] text-gray-400 max-w-[200px]">Após baixar, substitua o arquivo dados.json na sua pasta do projeto ou GitHub para atualizar todos os celulares.</p>
+      </div>
+    `;
+    statusEl.className = 'mt-4 text-center';
 
-    setTimeout(() => {
-      document.getElementById('modal-importar').classList.add('hidden');
-      resetImportModal();
-    }, 1800);
+    // Não fechar o modal automaticamente para dar tempo de baixar
+    // setTimeout(() => { ... }, 1800); 
   } catch (err) {
     statusEl.textContent = `❌ Erro: ${err.message}`;
     statusEl.className = 'mt-2 text-xs text-center text-red-500';
   }
+}
+
+function downloadDadosJSON() {
+  const data = localStorage.getItem('av_dados');
+  if (!data) return alert('Nenhum dado encontrado para exportar.');
+  
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dados.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  alert('Arquivo dados.json baixado! Agora você deve subir este arquivo no seu GitHub para atualizar todos os celulares.');
 }
 
 // ── Fechar modais ─────────────────────────────────────────────────
