@@ -729,7 +729,7 @@ function getNomeSeguradora(row, headers) {
   const nomesInjetados = [row['__nome_seguradora__'], row['NOME_SEGURADORA_REAL'], row['__insurer_name__']];
   
   // Regex para termos proibidos (mais flexível com acentos e espaços)
-  const forbiddenRegex = /^(SIM|NÃO|NAO|S|N|SEGURADORA|SISTEMA|RETER|D\.V\.N|REGULA[ÇC][ÃA]O|PR[ÓO]PRIO|MODELO|SLA|ASSUNTO|VISTORIA|RELAT[ÓO]RIO|HONOR[ÁA]RIOS|VALOR|DADOS|CONTATO|CADASTRO|PF|PJ|ORIENTA[ÇC][ÃA]O|PADR[ÃA]O|ESTIMATIVA)$/i;
+  const forbiddenRegex = /^(SIM|NÃO|NAO|S|N|SEGURADORA|SISTEMA|RETER|D\.V\.N|REGULA[ÇC][ÃA]O|PR[ÓO]PRIO|MODELO|SLA|ASSUNTO|VISTORIA|RELAT[ÓO]RIO|HONOR[ÁA]RIOS|VALOR|DADOS|CONTATO|CADASTRO|PF|PJ|ORIENTA[ÇC][ÃA]O|PADR[ÃA]O|ESTIMATIVA|N\/A|N\.A)$/i;
 
   for (const n of nomesInjetados) {
     if (n && n.length > 2 && n.length < 40) {
@@ -738,7 +738,14 @@ function getNomeSeguradora(row, headers) {
     }
   }
 
-  // 2. LISTA NEGRA ESTRITA E TERMOS TÉCNICOS
+  // 2. LISTA DE SEGURADORAS CONHECIDAS (Para busca em strings longas se necessário)
+  const knownInsurers = [
+    'AIG', 'ALLIANZ', 'AXA', 'CHUBB', 'ESSOR', 'EXCELSIOR', 'FAIRFAX', 'GENERALI', 
+    'HDI', 'KOVR', 'LIBERTY', 'MAPFRE', 'MITSUI', 'POTTENTIAL', 'SANCOR', 
+    'SOMBRERO', 'SOMPO', 'TOKIO MARINE', 'ZURICH', 'AVLA', 'BERKLEY', 'BMG', 
+    'FATOR', 'PORTO', 'SURA', 'SWISS RE', 'BRADESCO', 'SULAMERICA', 'ITAU', 'CAIXA'
+  ];
+
   const technicalTerms = [
     'ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 
     'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 
@@ -752,25 +759,56 @@ function getNomeSeguradora(row, headers) {
   
   for (const h of headers) {
     const v = String(row[h] || '').trim();
-    if (!v || v.length < 3 || v.length > 40) continue;
+    if (!v || v.length < 2) continue;
     
     const vu = v.toUpperCase().trim();
     
     // Se bater no Regex de proibidos, pula na hora
     if (forbiddenRegex.test(vu)) continue;
+
+    // Se a própria coluna se chamar "Seguradora" e o valor for válido (não curto demais)
+    if (h.toUpperCase().includes('SEGURADORA') && v.length >= 3 && v.length <= 40) {
+        // Se não for um termo técnico, retorna
+        const hasTechnical = technicalTerms.some(term => vu.includes(term));
+        if (!hasTechnical) return corrigirTexto(v);
+    }
+
+    // Tentar encontrar uma seguradora conhecida em qualquer campo (mesmo longo)
+    for (const ki of knownInsurers) {
+      if (vu.includes(ki)) {
+        // Se achou a seguradora mas é um e-mail ou string longa, retorna apenas o nome da seguradora
+        if (v.length > 40 || v.includes('@')) return ki;
+        if (!bestCandidate) bestCandidate = v;
+      }
+    }
+
+    if (v.length > 40) continue;
     
     // Se contém termos técnicos ou frases longas, descarta
     const hasTechnical = technicalTerms.some(term => vu.includes(term));
     if (hasTechnical) continue;
 
-    // Se a própria coluna se chamar "Seguradora", retorna na hora (se não for proibido)
-    if (h.toUpperCase().includes('SEGURADORA')) {
-        return corrigirTexto(v);
-    }
-
     // Se começa com letra maiúscula e é curto, é um ótimo candidato
     if (/^[A-ZÁÉÍÓÚÃÕÂÊÔ]/.test(v)) {
       if (!bestCandidate) bestCandidate = v;
+    }
+  }
+
+  // 4. Tentativa desesperada: extrair do domínio de e-mails se bestCandidate ainda for nulo
+  if (!bestCandidate) {
+    for (const h of headers) {
+      const v = String(row[h] || '');
+      // Regex para pegar o domínio antes do .com ou .global ou .net
+      const emailMatch = v.match(/@([a-z0-9-]+)\.(com|global|net|org)/i);
+      if (emailMatch && emailMatch[1]) {
+        let domain = emailMatch[1].toUpperCase();
+        // Ignorar domínios genéricos
+        if (!['GMAIL', 'OUTLOOK', 'HOTMAIL', 'ADDVALORA', 'YAHOO', 'UOL', 'TERRA', 'BOL'].includes(domain)) {
+          // Limpar nomes comuns (ex: bmgseguros -> BMG, br.hdi.global -> HDI)
+          domain = domain.replace(/^BR\.|^PT\.|SEGUROS|SEGURADORA|BR$/g, '');
+          if (domain.length > 2) return domain;
+        }
+      }
     }
   }
 
