@@ -273,10 +273,21 @@ async function carregarDados() {
               });
 
               const uniqueVals = new Set(realVals);
-              let score = uniqueVals.size * 5;
+              let score = uniqueVals.size * 10; // Aumentar peso da unicidade
+
+              // BÔNUS: Campo detectado no Double Header
+              if (key === "NOME_SEGURADORA_REAL") {
+                  score += 200;
+              }
 
               if (kUpper.includes('SEGURADORA') || kUpper.includes('CIA') || kUpper.includes('COMPANHIA') || kUpper.includes('NOME')) {
                   score += 50;
+              }
+
+              // PENALIDADE: Se os valores forem repetitivos (ex: "Conforme apólice")
+              // Se tiver muitos dados mas poucos únicos, penaliza
+              if (realVals.length > 5 && uniqueVals.size < (realVals.length / 3)) {
+                  score -= 100;
               }
 
               const avgLength = realVals.length > 0 ? realVals.reduce((a, b) => a + b.length, 0) / realVals.length : 0;
@@ -861,7 +872,11 @@ async function processarPlanilha() {
               const keys = Object.keys(row);
               keys.forEach((key, idx) => {
                   const topVal = topHeaders[idx];
-                  if (topVal && topVal.length > 2 && !['SIM','NÃO','NAO','S','N'].includes(topVal.toUpperCase())) {
+                  if (topVal && topVal.length > 2 && !['SIM','NÃO','NAO','S','N','SEGURADORA','CIA','SISTEMA'].includes(topVal.toUpperCase())) {
+                      // Se achou um nome no topo, cria um campo fixo para ele
+                      // Isso evita que o nome se perca mesmo se a coluna já tiver outro nome
+                      row["NOME_SEGURADORA_REAL"] = topVal;
+                      
                       if (key.includes('__EMPTY')) {
                           row[topVal] = row[key];
                       }
