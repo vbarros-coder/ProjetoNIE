@@ -516,7 +516,9 @@ function renderTabela() {
 
       const headers = sectionData.headers;
       const insurerKey = sectionData.insurerKey || headers[0];
-      const seguradoraNome = row[insurerKey] || 'Seguradora';
+      
+      // USAR A NOVA FUNÇÃO getNomeSeguradora PARA O TÍTULO
+      const seguradoraNome = getNomeSeguradora(row, headers);
       
       // Selecionar alguns campos para mostrar no card (ex: os 4 primeiros após a seguradora)
       const otherFields = headers.filter(h => h !== insurerKey).slice(0, 4);
@@ -572,8 +574,8 @@ function abrirDetalheRow(row) {
   const d = allData[aba] || {};
   const h = d.headers || window._currentHeaders || [];
   
-  // Garantir que a seguradora seja o primeiro campo válido
-  const seguradora = row['Seguradora'] || row['SEGURADORA'] || row[h[0]] || 'Detalhes';
+  // Garantir que a seguradora seja o primeiro campo válido usando a nova função
+  const seguradora = getNomeSeguradora(row, h);
 
   document.getElementById('modal-titulo').textContent = `${aba} — ${seguradora}`;
 
@@ -646,6 +648,45 @@ function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function corrigirTexto(t) {
+  if (!t || typeof t !== 'string') return t;
+  return t.replace(/Trabalhist/gi, 'Trabalhista');
+}
+
+// ── Detectar nome da seguradora no row ───────────────────────────
+function getNomeSeguradora(row, headers) {
+  // 1. PRIORIDADE MÁXIMA: Campo especial que adicionamos no pre-processamento ou Double Header
+  if (row['__nome_seguradora__']) return corrigirTexto(row['__nome_seguradora__']);
+  if (row['NOME_SEGURADORA_REAL']) return corrigirTexto(row['NOME_SEGURADORA_REAL']);
+
+  // 2. Coluna 'Seguradora' se tiver valor real (não Sim/Não)
+  const seg = row['Seguradora'] || row['SEGURADORA'] || '';
+  const badValues = ['sim', 'não', 'nao', 'n/a', '', 'não aplicável', 'não aplica', 'sem informação', 'conforme apólice', 'ok', 's', 'n'];
+  if (seg && !badValues.includes(seg.toLowerCase().trim()) && seg.length > 2 && seg.length < 50) {
+    return corrigirTexto(seg);
+  }
+
+  // 3. Procurar em outras colunas por um nome que pareça empresa
+  const technicalTerms = ['ATÉ', 'DIAS', 'VISTORIA', 'APÓLICE', 'RELATÓRIO', 'ACORDO', 'ORIENTAÇÃO', 'CONTATO', 'PADRÃO', 'CONFORME', 'E-MAIL', 'EMAIL', 'SALVADO', 'ANALISTA', 'PREJUIZO', 'VALOR', 'SLA', 'SISTEMA'];
+
+  for (const h of headers) {
+    if (h.startsWith('__')) continue;
+    const v = String(row[h] || '').trim();
+    if (!v || v.length < 3 || v.length > 50) continue;
+    
+    const vu = v.toUpperCase();
+    if (badValues.includes(vu.toLowerCase())) continue;
+    if (technicalTerms.some(term => vu.includes(term))) continue;
+    
+    // Se começar com letra maiúscula e não for um termo técnico, é um forte candidato
+    if (/^[A-ZÁÉÍÓÚÃÕÂÊÔ]/.test(v)) {
+      return corrigirTexto(v);
+    }
+  }
+
+  return 'Seguradora';
 }
 
 function highlightText(html, term) {
